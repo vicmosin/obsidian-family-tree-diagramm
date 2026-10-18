@@ -1,0 +1,29 @@
+{
+  "name": "obsidian-family-tree",
+  "version": "0.1.0",
+  "description": "Interactive family tree diagram built from person notes in your vault",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "test": "esbuild test/*.test.ts --bundle --platform=node --log-level=warning --outdir=.test && node --test .test/*.js"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/geojson": "^7946.0.16",
+    "@types/leaflet": "^1.9.22",
+    "@types/node": "^22.0.0",
+    "@types/topojson-client": "^3.1.5",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.25.0",
+    "obsidian": "^1.8.7",
+    "tslib": "^2.8.1",
+    "typescript": "^5.6.3"
+  },
+  "dependencies": {
+    "@dagrejs/dagre": "^1.1.4",
+    "leaflet": "^1.9.4",
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2"
+  }
+}

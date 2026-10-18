@@ -1,0 +1,9 @@
+{
+  "id": "family-tree-diagram",
+  "name": "Family Tree Diagram",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "Builds an interactive family tree from person notes linked through frontmatter (parent_of, child_of, married_to, siblings).",
+  "author": "Victor Mosin",
+  "isDesktopOnly": false
+}
