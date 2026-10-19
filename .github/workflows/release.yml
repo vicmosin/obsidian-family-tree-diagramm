@@ -73,6 +73,9 @@ jobs:
         run: |
           if gh release view "$TAG" > /dev/null 2>&1; then
             gh release upload "$TAG" main.js manifest.json styles.css "$ZIP" --clobber
+            # Drop zips left over from an earlier build with a different version in its name
+            gh release view "$TAG" --json assets --jq '.assets[].name' | { grep '\.zip$' | grep -vxF "$ZIP" || true; } |
+              while read -r old; do gh release delete-asset "$TAG" "$old" --yes; done
           else
             # --target sets the commit the tag will point to once the draft is published
             gh release create "$TAG" \
