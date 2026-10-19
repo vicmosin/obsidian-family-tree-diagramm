@@ -124,14 +124,9 @@ export class TimelineRenderer {
 		private cb: RendererCallbacks,
 		private opts: { embedded: boolean }
 	) {
-		this.el = container.appendChild(document.createElement("div"));
-		this.el.className = "ft-timeline" + (opts.embedded ? " is-embedded" : "");
-		this.svg = document.createElementNS(SVG_NS, "svg");
-		this.svg.classList.add("ft-tl-svg");
-		this.el.appendChild(this.svg);
-		this.undatedEl = document.createElement("div");
-		this.undatedEl.className = "ft-tl-undated";
-		this.el.appendChild(this.undatedEl);
+		this.el = container.createDiv("ft-timeline" + (opts.embedded ? " is-embedded" : ""));
+		this.svg = this.el.createSvg("svg", { cls: "ft-tl-svg" });
+		this.undatedEl = this.el.createDiv("ft-tl-undated");
 		this.svg.addEventListener("mousemove", (e) => this.moveCursor(e));
 		this.svg.addEventListener("mouseleave", () => this.cursor?.remove());
 	}
@@ -219,9 +214,13 @@ export class TimelineRenderer {
 		svg.setAttribute("height", String(height));
 
 		const defs = el("defs");
-		defs.innerHTML = `
-			<linearGradient id="${this.uid}-in"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#fff" stop-opacity="1"/></linearGradient>
-			<linearGradient id="${this.uid}-out"><stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>`;
+		// Fades for approximate dates: white = visible in the masks below
+		for (const [suffix, from, to] of [["in", 0, 1], ["out", 1, 0]] as const) {
+			const grad = el("linearGradient", { id: `${this.uid}-${suffix}` });
+			grad.appendChild(el("stop", { offset: 0, "stop-color": "#fff", "stop-opacity": from }));
+			grad.appendChild(el("stop", { offset: 1, "stop-color": "#fff", "stop-opacity": to }));
+			defs.appendChild(grad);
+		}
 		svg.appendChild(defs);
 
 		// Grid and axis
@@ -323,16 +322,13 @@ export class TimelineRenderer {
 		});
 		svg.appendChild(lines);
 
-		this.undatedEl.replaceChildren();
+		this.undatedEl.empty();
 		if (undated.length) {
-			this.undatedEl.appendChild(document.createTextNode("No dates yet: "));
+			this.undatedEl.appendText("No dates yet: ");
 			undated.forEach((p, i) => {
-				const a = document.createElement("a");
-				a.textContent = p.name;
-				a.className = "ft-tl-undated-name";
+				const a = this.undatedEl.createEl("a", { cls: "ft-tl-undated-name", text: p.name });
 				a.onclick = () => (p.ghost ? this.cb.onCreate(p) : this.cb.onOpen(p, false));
-				this.undatedEl.appendChild(a);
-				if (i < undated.length - 1) this.undatedEl.appendChild(document.createTextNode(", "));
+				if (i < undated.length - 1) this.undatedEl.appendText(", ");
 			});
 		}
 		if (!rows.length) {

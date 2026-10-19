@@ -1,6 +1,6 @@
-# Family Tree Diagram for Obsidian
+# Family Tree Diagram
 
-Turns your person notes into an interactive family tree.
+Build an interactive family tree, timeline and map from the person notes in your vault. Relationships are read from note properties, so your data stays plain Markdown.
 
 ![screenshot](docs/screenshot.png)
 
@@ -85,7 +85,7 @@ death_place: "[[Toronto]]"
 - Click a pin for everyone connected to that place (with relationship labels). The slider at the bottom shows only what happened up to a given year.
 - **Online / offline:** the map uses OpenStreetMap tiles when there's a connection. Country borders are built into the plugin and drawn underneath, so without internet you still get borders, pins, names and routes (marked "Offline — built-in map").
 - Embed with ```` ```family-map ````, same options as the other blocks.
-- Privacy: only place names (when you press Search) and map-tile requests go to OpenStreetMap. Nothing about people leaves your vault.
+- Privacy: only place names (when you press Search) and map-tile requests go to OpenStreetMap. Nothing about people leaves your vault. See [Network use](#network-use).
 
 ## Data check
 
@@ -118,13 +118,43 @@ Command **Check family tree data** lists:
 
   Without `root`, a block inside a person note focuses on that person; elsewhere it shows everyone (`root: all` forces everyone). In embeds use Ctrl/Cmd+wheel to zoom so normal scrolling still works.
 
-## Install (manual)
+## Installation
 
-1. `npm install && npm run build`
-2. Copy `main.js`, `manifest.json`, `styles.css` into `<vault>/.obsidian/plugins/family-tree-diagram/`.
-3. Settings → Community plugins → enable **Family Tree Diagram**.
+- **Community plugins:** Settings → Community plugins → Browse → search for "Family Tree Diagram" → Install → Enable.
+- **Manual:** download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/vicmosin/obsidian-family-tree-diagramm/releases/latest) into `<vault>/.obsidian/plugins/family-tree-diagram/`, then enable the plugin under Settings → Community plugins.
+
+## Network use
+
+The tree, timeline, relationship labels and data check work fully offline. Only the map uses the network, and only these two OpenStreetMap services:
+
+| Service | When | What is sent |
+| --- | --- | --- |
+| [OpenStreetMap tiles](https://operations.osmfoundation.org/policies/tiles/) (`tile.openstreetmap.org`) | While the map view is open and online | Requests for map images of the area you're looking at |
+| [Nominatim](https://operations.osmfoundation.org/policies/nominatim/) (`nominatim.openstreetmap.org`) | Only when you press **Search** in *Find coordinates for places* | The place names listed in that dialog, one request per second |
+
+No names, dates or other details about people are ever sent. Without a connection the map falls back to country borders bundled with the plugin. There is no telemetry, no account and nothing to pay for.
 
 ## Development
 
-- `npm run dev` rebuilds on change (symlink the folder into a test vault's plugins dir).
-- `npm test` runs the parsing/layout tests.
+- `npm install`, then `npm run dev` rebuilds on change (symlink the folder into a test vault's plugins directory).
+- `npm test` runs the parsing, layout, kinship and timeline tests.
+- `npm run lint` runs [Obsidian's ESLint plugin](https://github.com/obsidianmd/eslint-plugin), the same checks the Community directory uses, including manifest validation.
+
+### Releasing
+
+1. `npm version patch` (or `minor` / `major`) updates `package.json`, `manifest.json` and `versions.json` and creates a tag.
+2. `git push --follow-tags`. The [release workflow](.github/workflows/release.yml) checks that the tag matches the manifest, lints, tests, builds, attests the files and creates a draft GitHub release with `main.js`, `manifest.json` and `styles.css`.
+3. Add release notes and publish the draft.
+
+## License
+
+[MIT](LICENSE) © Victor Mosin
+
+The plugin bundles these open-source components:
+
+- [Leaflet](https://leafletjs.com) (BSD-2-Clause): map rendering. Its stylesheet is included in `styles.css` with its license notice.
+- [world-atlas](https://github.com/topojson/world-atlas) (ISC) with [Natural Earth](https://www.naturalearthdata.com) data (public domain): the offline country borders.
+- [topojson-client](https://github.com/topojson/topojson-client) (ISC): reads the bundled borders.
+- [dagre](https://github.com/dagrejs/dagre) (MIT): tree layout.
+
+Map tiles and place search © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, available under the Open Database License.

@@ -56,7 +56,7 @@ export class FamilyTreeSettingTab extends PluginSettingTab {
 		new Setting(containerEl).setName("Relationship labels").setHeading();
 		new Setting(containerEl)
 			.setName("Me")
-			.setDesc("Labels like “двоюродная тётя” are shown relative to this person. You can also right-click a card → “This is me”.")
+			.setDesc("Labels like “двоюродная тётя” are shown relative to this person. You can also set it from a card's right-click menu.")
 			.addDropdown((d) => {
 				d.addOption("", "— not set —");
 				const people = [...this.plugin.graph().persons.values()].filter((p) => !p.ghost).sort((a, b) => a.fullName.localeCompare(b.fullName));
@@ -162,7 +162,6 @@ export class FamilyTreeSettingTab extends PluginSettingTab {
 			.addSlider((sl) =>
 				sl
 					.setLimits(1, 8, 1)
-					.setDynamicTooltip()
 					.setValue(s.defaultDepth)
 					.onChange(async (v) => ((s.defaultDepth = v), await save()))
 			);

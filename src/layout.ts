@@ -128,7 +128,11 @@ function buildBlocks(g: FamilyGraph, visible: Set<string>, families: Map<string,
 		while (stack.length) {
 			const x = stack.pop()!;
 			comp.push(x);
-			for (const y of adj.get(x) ?? []) if (!seen.has(y)) seen.add(y), stack.push(y);
+			for (const y of adj.get(x) ?? []) {
+				if (seen.has(y)) continue;
+				seen.add(y);
+				stack.push(y);
+			}
 		}
 		blocks.push(orderBlock(comp, adj));
 	}

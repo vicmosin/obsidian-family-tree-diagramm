@@ -4,9 +4,8 @@ import { ReverseFix } from "./check";
 import { CheckModal } from "./checkModal";
 import { Kinship } from "./kinship";
 import { GeocodeModal } from "./geocodeModal";
-import { removeLeafletCss } from "./map";
 import { collectPlaces, parseLocation, Place } from "./places";
-import { buildGraph, extractLinks, FamilyGraph, Person, RawNote } from "./model";
+import { buildGraph, extractLinks, FamilyGraph, Person, RawNote, RELATION_FIELDS } from "./model";
 import { RenderExtras, RendererCallbacks } from "./render";
 import { DEFAULT_SETTINGS, FamilyTreeSettings, FamilyTreeSettingTab } from "./settings";
 import { Display, FamilyTreeBlock, FamilyTreeView, VIEW_TYPE } from "./view";
@@ -80,10 +79,6 @@ export default class FamilyTreePlugin extends Plugin {
 		this.registerEvent(this.app.vault.on("delete", invalidate));
 	}
 
-	onunload() {
-		removeLeafletCss();
-	}
-
 	/** Birth/death/lived places of `visible` people, with coordinates from place notes or the plugin's cache */
 	places(visible: Set<string>): Map<string, Place> {
 		const { metadataCache } = this.app;
@@ -93,7 +88,7 @@ export default class FamilyTreePlugin extends Plugin {
 			(link, from) => {
 				const f = metadataCache.getFirstLinkpathDest(link, from);
 				if (!(f instanceof TFile) || f.extension !== "md") return null;
-				const fm = metadataCache.getFileCache(f)?.frontmatter;
+				const fm: Record<string, unknown> | undefined = metadataCache.getFileCache(f)?.frontmatter;
 				return { path: f.path, name: f.basename, coords: parseLocation(fm?.location ?? fm?.coordinates) };
 			},
 			this.settings.placeCache
@@ -110,7 +105,7 @@ export default class FamilyTreePlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		const data = (await this.loadData()) ?? {};
+		const data = ((await this.loadData()) ?? {}) as Partial<FamilyTreeSettings>;
 		this.settings = {
 			...DEFAULT_SETTINGS,
 			...data,
@@ -167,7 +162,7 @@ export default class FamilyTreePlugin extends Plugin {
 		for (const file of this.app.vault.getMarkdownFiles()) {
 			const cache = metadataCache.getFileCache(file);
 			if (!cache) continue;
-			const type = cache.frontmatter?.type;
+			const type: unknown = cache.frontmatter?.type;
 			const types = Array.isArray(type) ? type : [type];
 			const tags = (getAllTags(cache) ?? []).map((t) => t.replace(/^#/, "").toLowerCase());
 			const byType = !!s.typeValue && types.includes(s.typeValue);
@@ -271,13 +266,25 @@ export default class FamilyTreePlugin extends Plugin {
 		};
 	}
 
+	/** Relation properties that person notes store as lists rather than text */
+	private listProperties(): Set<string> {
+		const keys = new Set<string>();
+		const relationKeys = RELATION_FIELDS.map((f) => this.settings.fields[f]);
+		for (const p of this.graph().persons.values()) {
+			if (!p.path) continue;
+			const file = this.app.vault.getFileByPath(p.path);
+			const fm: Record<string, unknown> | undefined = file ? this.app.metadataCache.getFileCache(file)?.frontmatter : undefined;
+			for (const k of relationKeys) if (Array.isArray(fm?.[k])) keys.add(k);
+		}
+		return keys;
+	}
+
 	/** Writes missing reverse links into frontmatter. Keeps each property's existing shape (text or list) */
 	async applyReverseFixes(fixes: ReverseFix[]): Promise<{ links: number; notes: number }> {
 		const byPerson = new Map<string, ReverseFix[]>();
 		for (const f of fixes) (byPerson.get(f.person) ?? byPerson.set(f.person, []).get(f.person)!).push(f);
-		const typeOf = (key: string): string | undefined =>
-			// Not in the public API; used only to choose between text and list
-			(this.app as any).metadataTypeManager?.getAssignedType?.(key) ?? undefined;
+		// Write new values in the same shape (text or list) the vault already uses for that property
+		const listKeys = this.listProperties();
 
 		let links = 0;
 		let notes = 0;
@@ -285,18 +292,20 @@ export default class FamilyTreePlugin extends Plugin {
 			const file = this.app.vault.getAbstractFileByPath(path);
 			if (!(file instanceof TFile)) continue;
 			let changed = false;
-			await this.app.fileManager.processFrontMatter(file, (fm) => {
+			await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
 				for (const fix of list) {
 					const target = this.app.vault.getAbstractFileByPath(fix.target);
 					if (!(target instanceof TFile)) continue;
 					const key = this.settings.fields[fix.field];
 					const linktext = this.app.metadataCache.fileToLinktext(target, file.path, true);
 					const existing = fm[key];
+					const asList = listKeys.has(key);
 					if (extractLinks(existing).some((l) => this.app.metadataCache.getFirstLinkpathDest(l, file.path) === target)) continue;
 					const link = `[[${linktext}]]` + (fix.uncertain ? " ?" : "");
 					if (Array.isArray(existing)) existing.push(link);
-					else if (existing == null || existing === "") fm[key] = typeOf(key) === "multitext" ? [link] : link;
-					else fm[key] = typeOf(key) === "multitext" ? [existing, link] : `${existing}, ${link}`;
+					else if (existing == null || existing === "") fm[key] = asList ? [link] : link;
+					else if (typeof existing === "string") fm[key] = asList ? [existing, link] : `${existing}, ${link}`;
+					else continue;
 					links++;
 					changed = true;
 				}

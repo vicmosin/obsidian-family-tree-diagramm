@@ -131,8 +131,8 @@ export class TreeRenderer {
 			fn: (e: SVGElementEventMap[K]) => void,
 			o?: AddEventListenerOptions
 		) => {
-			target.addEventListener(type, fn as EventListener, o);
-			this.cleanups.push(() => target.removeEventListener(type, fn as EventListener, o));
+			target.addEventListener(type, fn, o);
+			this.cleanups.push(() => target.removeEventListener(type, fn, o));
 		};
 
 		on(svg, "pointerdown", (e) => {
@@ -398,7 +398,7 @@ function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, 
 }
 
 function html(tag: string, cls: string): HTMLElement {
-	const e = document.createElementNS(XHTML_NS, tag) as HTMLElement;
+	const e = document.createElementNS(XHTML_NS, tag);
 	e.className = cls;
 	return e;
 }

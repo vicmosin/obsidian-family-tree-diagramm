@@ -107,7 +107,10 @@ export class Kinship {
 			const b = B.get(c);
 			if (!b) continue;
 			const score = a.dist + b.dist;
-			if (score < bestScore) (best = c), (bestScore = score);
+			if (score < bestScore) {
+				best = c;
+				bestScore = score;
+			}
 		}
 		if (best == null) return undefined;
 		const walk = (M: typeof A, start: string) => {
@@ -190,7 +193,11 @@ export class Kinship {
 			const x = queue.shift()!;
 			if (x === to) break;
 			for (const rel of [g.parents, g.children, g.spouses, g.siblings]) {
-				for (const y of g.get(rel, x)) if (!prev.has(y)) prev.set(y, x), queue.push(y);
+				for (const y of g.get(rel, x)) {
+					if (prev.has(y)) continue;
+					prev.set(y, x);
+					queue.push(y);
+				}
 			}
 		}
 		if (!prev.has(to)) return undefined;

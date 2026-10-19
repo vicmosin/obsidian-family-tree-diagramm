@@ -57,7 +57,7 @@ export class GeocodeModal extends Modal {
 			if (c.status === "found") {
 				result.createSpan({ text: c.label ?? "" });
 				const link = result.createEl("a", {
-					text: " map ↗",
+					text: " View on map ↗",
 					href: `https://www.openstreetmap.org/?mlat=${c.coords![0]}&mlon=${c.coords![1]}#map=10/${c.coords![0]}/${c.coords![1]}`,
 				});
 				link.setAttr("target", "_blank");
@@ -116,7 +116,7 @@ export class GeocodeModal extends Modal {
 			if (!c.accept || !c.coords) continue;
 			const file = c.place.notePath ? this.app.vault.getAbstractFileByPath(c.place.notePath) : null;
 			if (file instanceof TFile) {
-				await this.app.fileManager.processFrontMatter(file, (fm) => {
+				await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
 					fm.location = c.coords;
 				});
 				notes++;
