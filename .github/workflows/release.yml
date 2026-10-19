@@ -1,12 +1,17 @@
 # Based on https://docs.obsidian.md/Plugins/Releasing/Release+your+plugin+with+GitHub+Actions
-# Push a tag equal to the manifest version (e.g. `npm version patch && git push --follow-tags`)
-# to get a draft release with main.js, manifest.json and styles.css attached.
+# Two ways to release the version in manifest.json:
+# - Command line: push a tag equal to it (`npm version patch && git push --follow-tags`).
+# - GitHub website: Actions → "Release Obsidian plugin" → Run workflow. This creates a draft
+#   release; publishing the draft creates the tag.
+# Either way the release gets main.js, manifest.json and styles.css attached. Running again for a
+# version that already has a release replaces its files.
 name: Release Obsidian plugin
 
 on:
   push:
     tags:
       - "*"
+  workflow_dispatch:
 
 jobs:
   build:
@@ -24,14 +29,15 @@ jobs:
           node-version: "22.x"
           cache: npm
 
-      - name: Check tag matches manifest version
+      - name: Determine version
+        id: version
         run: |
-          tag="${GITHUB_REF#refs/tags/}"
           version="$(node -p "require('./manifest.json').version")"
-          if [ "$tag" != "$version" ]; then
-            echo "Tag $tag doesn't match manifest.json version $version" >&2
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "$version" ]; then
+            echo "Tag $GITHUB_REF_NAME doesn't match manifest.json version $version" >&2
             exit 1
           fi
+          echo "tag=$version" >> "$GITHUB_OUTPUT"
 
       - name: Build plugin
         run: |
@@ -48,13 +54,18 @@ jobs:
             manifest.json
             styles.css
 
-      - name: Create release
+      - name: Create or update release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          tag="${GITHUB_REF#refs/tags/}"
-
-          gh release create "$tag" \
-            --title="$tag" \
-            --draft \
-            main.js manifest.json styles.css
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" main.js manifest.json styles.css --clobber
+          else
+            # --target sets the commit the tag will point to once the draft is published
+            gh release create "$TAG" \
+              --title="$TAG" \
+              --draft \
+              --target "$GITHUB_SHA" \
+              main.js manifest.json styles.css
+          fi

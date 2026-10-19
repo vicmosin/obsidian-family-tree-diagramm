@@ -142,9 +142,12 @@ No names, dates or other details about people are ever sent. Without a connectio
 
 ### Releasing
 
-1. `npm version patch` (or `minor` / `major`) updates `package.json`, `manifest.json` and `versions.json` and creates a tag.
-2. `git push --follow-tags`. The [release workflow](.github/workflows/release.yml) checks that the tag matches the manifest, lints, tests, builds, attests the files and creates a draft GitHub release with `main.js`, `manifest.json` and `styles.css`.
-3. Add release notes and publish the draft.
+First run `npm version patch` (or `minor` / `major`), or edit `version` in `manifest.json`, `package.json` and `versions.json` on GitHub, and merge that into `main`. Then either:
+
+- **On GitHub:** Actions → **Release Obsidian plugin** → **Run workflow** on `main`. When it finishes, open Releases, edit the new draft, add release notes and select **Publish release**. Publishing creates the version tag.
+- **From the command line:** `git push --follow-tags` after `npm version`. The tag starts the same workflow.
+
+The [release workflow](.github/workflows/release.yml) checks the tag matches the manifest, lints, tests, builds, attests the files and creates a draft release with `main.js`, `manifest.json` and `styles.css`. If the release already exists, it replaces those files instead.
 
 ## License
 
