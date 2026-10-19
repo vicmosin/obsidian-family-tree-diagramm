@@ -1,6 +1,6 @@
 import esbuild from "esbuild";
 import process from "process";
-import builtins from "builtin-modules";
+import { builtinModules } from "node:module";
 
 const prod = process.argv[2] === "production";
 
@@ -12,7 +12,7 @@ const context = await esbuild.context({
     "electron",
     "@codemirror/*",
     "@lezer/*",
-    ...builtins,
+    ...builtinModules,
   ],
   format: "cjs",
   target: "es2020",
@@ -21,7 +21,6 @@ const context = await esbuild.context({
   treeShaking: true,
   outfile: "main.js",
   minify: prod,
-  loader: { ".css": "text" },
 });
 
 if (prod) {

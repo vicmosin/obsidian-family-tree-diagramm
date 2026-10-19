@@ -178,7 +178,7 @@ export class FamilyTreeView extends ItemView {
 		this.root = this.activePersonId();
 		this.updateModeButton();
 		// Layout needs the container size
-		requestAnimationFrame(() => this.refresh(false));
+		window.requestAnimationFrame(() => this.refresh(false));
 	}
 
 	async onClose() {
@@ -197,8 +197,6 @@ export class FamilyTreeView extends ItemView {
 		this.renderer = createRenderer(this.plugin, this.display, this.canvas, this, false);
 		for (const [id, b] of this.displayBtns) b.toggleClass("is-active", id === this.display);
 		this.orderEl.toggle(this.display === "timeline");
-		// Tab title follows the display
-		(this.leaf as unknown as { updateHeader?: () => void }).updateHeader?.();
 	}
 
 	focusOn(id: string) {
@@ -297,7 +295,7 @@ export class FamilyTreeBlock extends MarkdownRenderChild {
 			const extras = showLabels ? this.plugin.labelExtras(this.plugin.meId(), visible) : {};
 			feedRenderer(this.plugin, renderer, { visible, extras, highlight: root, order: opts.order ?? "family" }, keepView);
 		};
-		requestAnimationFrame(() => draw(false));
+		window.requestAnimationFrame(() => draw(false));
 		this.register(this.plugin.onGraphChange(() => draw(true)));
 	}
 

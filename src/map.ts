@@ -1,7 +1,7 @@
 import L from "leaflet";
-import leafletCss from "leaflet/dist/leaflet.css";
 import { feature } from "topojson-client";
 import type { FeatureCollection } from "geojson";
+import type { GeometryCollection, Topology } from "topojson-specification";
 import countries from "world-atlas/countries-50m.json";
 import { FamilyGraph } from "./model";
 import { lifePath, Place, PlaceEvent } from "./places";
@@ -22,27 +22,13 @@ export interface MapHooks {
 	onOpenPath?(path: string): void;
 }
 
-const CSS_ID = "ft-leaflet-css";
 const ROLE_ICON: Record<PlaceEvent["role"], string> = { birth: "★", lived: "⌂", death: "†" };
 const ROLE_ORDER: Record<PlaceEvent["role"], number> = { birth: 0, lived: 1, death: 2 };
 
-/** Leaflet's stylesheet is injected while a map is open; removed on plugin unload */
-export function ensureLeafletCss() {
-	if (document.getElementById(CSS_ID)) return;
-	const style = document.head.appendChild(document.createElement("style"));
-	style.id = CSS_ID;
-	style.textContent = leafletCss;
-}
-
-export function removeLeafletCss() {
-	document.getElementById(CSS_ID)?.remove();
-}
-
 let outline: FeatureCollection | undefined;
 function worldOutline(): FeatureCollection {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const topo = countries as any;
-	outline ??= feature(topo, topo.objects.countries) as unknown as FeatureCollection;
+	const topo = countries as Topology<{ countries: GeometryCollection }>;
+	outline ??= feature(topo, topo.objects.countries);
 	return outline;
 }
 
@@ -67,11 +53,8 @@ export class MapRenderer {
 		private opts: { embedded: boolean },
 		private hooks: MapHooks = {}
 	) {
-		ensureLeafletCss();
-		this.el = container.appendChild(document.createElement("div"));
-		this.el.className = "ft-map";
-		const mapEl = this.el.appendChild(document.createElement("div"));
-		mapEl.className = "ft-map-leaflet";
+		this.el = container.createDiv("ft-map");
+		const mapEl = this.el.createDiv("ft-map-leaflet");
 
 		this.map = L.map(mapEl, {
 			zoomControl: false,
@@ -82,26 +65,20 @@ export class MapRenderer {
 		}).setView([50, 30], 4);
 		this.map.attributionControl.setPrefix("");
 
-		// Offline base: country borders bundled with the plugin, drawn below the online tiles
-		const pane = this.map.createPane("ft-outline");
-		pane.style.zIndex = "150";
+		// Offline base: country borders bundled with the plugin, drawn below the online tiles (z-index in styles.css)
+		this.map.createPane("ft-outline");
 		L.geoJSON(worldOutline(), { pane: "ft-outline", interactive: false, style: () => ({ className: "ft-map-land" }) }).addTo(this.map);
 		this.layers.addTo(this.map);
 
 		// Overlay controls
-		const top = this.el.appendChild(document.createElement("div"));
-		top.className = "ft-map-controls";
-		this.statusEl = top.appendChild(document.createElement("span"));
-		this.statusEl.className = "ft-map-status";
-		this.locateEl = top.appendChild(document.createElement("button"));
-		this.locateEl.className = "ft-map-locate";
+		const top = this.el.createDiv("ft-map-controls");
+		this.statusEl = top.createSpan("ft-map-status");
+		this.locateEl = top.createEl("button", { cls: "ft-map-locate" });
 		this.locateEl.onclick = () => this.hooks.onLocate?.();
 
-		const bottom = this.el.appendChild(document.createElement("div"));
-		bottom.className = "ft-map-time";
-		this.sliderLabel = bottom.appendChild(document.createElement("span"));
-		this.slider = bottom.appendChild(document.createElement("input"));
-		this.slider.type = "range";
+		const bottom = this.el.createDiv("ft-map-time");
+		this.sliderLabel = bottom.createSpan();
+		this.slider = bottom.createEl("input", { type: "range" });
 		this.slider.oninput = () => {
 			const v = Number(this.slider.value);
 			this.yearTo = v >= Number(this.slider.max) ? undefined : v;
@@ -109,7 +86,10 @@ export class MapRenderer {
 			this.draw();
 		};
 		// Keep map gestures off the controls
-		for (const c of [top, bottom]) L.DomEvent.disableClickPropagation(c), L.DomEvent.disableScrollPropagation(c);
+		for (const c of [top, bottom]) {
+			L.DomEvent.disableClickPropagation(c);
+			L.DomEvent.disableScrollPropagation(c);
+		}
 
 		if (navigator.onLine) this.addTiles();
 		else this.setStatus("Offline — built-in map");
@@ -126,7 +106,7 @@ export class MapRenderer {
 		const missing = [...data.places.values()].filter((p) => !p.coords).length;
 		this.locateEl.textContent = `📍 ${missing} place${missing === 1 ? "" : "s"} without coordinates — find…`;
 		this.locateEl.toggleAttribute("hidden", missing === 0 || !this.hooks.onLocate);
-		if (!keepView) requestAnimationFrame(() => (data.highlight && this.hasStops(data.highlight) ? this.centerOn(data.highlight) : this.fit()));
+		if (!keepView) window.requestAnimationFrame(() => (data.highlight && this.hasStops(data.highlight) ? this.centerOn(data.highlight) : this.fit()));
 	}
 
 	setHighlight(id?: string) {
@@ -262,35 +242,27 @@ export class MapRenderer {
 	}
 
 	private popup(place: Place, events: PlaceEvent[]): HTMLElement {
-		const root = document.createElement("div");
-		const h = root.appendChild(document.createElement("div"));
-		h.className = "ft-map-popup-title";
-		h.textContent = place.name;
+		const root = createDiv();
+		const h = root.createDiv({ cls: "ft-map-popup-title", text: place.name });
 		if (place.notePath && this.hooks.onOpenPath) {
-			h.classList.add("is-link");
+			h.addClass("is-link");
 			h.onclick = () => this.hooks.onOpenPath!(place.notePath!);
 		}
-		const list = root.appendChild(document.createElement("ul"));
+		const list = root.createEl("ul");
 		const sorted = [...events].sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role] || (a.year ?? 9999) - (b.year ?? 9999));
 		for (const e of sorted) {
 			const p = this.data!.graph.persons.get(e.person)!;
-			const li = list.appendChild(document.createElement("li"));
-			const icon = li.appendChild(document.createElement("span"));
-			icon.className = "ft-map-role";
-			icon.textContent = ROLE_ICON[e.role];
-			icon.title = e.role === "birth" ? "born" : e.role === "death" ? "died" : "lived";
-			const year = li.appendChild(document.createElement("span"));
-			year.className = "ft-map-year";
-			year.textContent = e.year ? (e.to && e.to !== e.year ? `${e.year}–${e.to}` : String(e.year)) : "";
-			const a = li.appendChild(document.createElement("a"));
-			a.textContent = p.name + (e.uncertain ? " ?" : "");
+			const li = list.createEl("li");
+			li.createSpan({
+				cls: "ft-map-role",
+				text: ROLE_ICON[e.role],
+				attr: { title: e.role === "birth" ? "Born" : e.role === "death" ? "Died" : "Lived" },
+			});
+			li.createSpan({ cls: "ft-map-year", text: e.year ? (e.to && e.to !== e.year ? `${e.year}–${e.to}` : String(e.year)) : "" });
+			const a = li.createEl("a", { text: p.name + (e.uncertain ? " ?" : "") });
 			a.onclick = () => (p.ghost ? this.cb.onCreate(p) : this.cb.onOpen(p, false));
 			const kin = this.data!.extras?.labels?.get(e.person);
-			if (kin) {
-				const k = li.appendChild(document.createElement("span"));
-				k.className = "ft-map-kin";
-				k.textContent = kin;
-			}
+			if (kin) li.createSpan({ cls: "ft-map-kin", text: kin });
 		}
 		return root;
 	}

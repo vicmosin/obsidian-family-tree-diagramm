@@ -264,7 +264,8 @@ export function formatDate(value: unknown): string | undefined {
 	if (value == null || value === "") return undefined;
 	if (value instanceof Date) return value.toISOString().slice(0, 10);
 	if (Array.isArray(value)) return value.map((v) => formatDate(v)).filter(Boolean).join(", ") || undefined;
-	return String(value).trim() || undefined;
+	if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value).trim() || undefined;
+	return undefined;
 }
 
 const APPROX = /около|ок\.|примерно|приблизительно|~|≈|circa|\bca\.|\bc\.|about|\babt\b|approx|\?|предположительно|возможно|вероятно/i;
@@ -276,8 +277,9 @@ export function parseDate(value?: string): DateInfo | undefined {
 	if (!value) return undefined;
 	const text = value.trim();
 	if (!text) return undefined;
-	const years = [...text.matchAll(/(?<!\d)(\d{4})(?!\d)/g)].map((m) => Number(m[1]));
-	const decade = text.match(/(?<!\d)(\d{3}0)\s*-?\s*(ые|е|х|s)(?![a-zа-я])/i);
+	// No lookbehind: it fails to parse on iOS before 16.4
+	const years = [...text.matchAll(/(?:^|\D)(\d{4})(?!\d)/g)].map((m) => Number(m[1]));
+	const decade = text.match(/(?:^|\D)(\d{3}0)\s*-?\s*(ые|е|х|s)(?![a-zа-я])/i);
 	if (decade) {
 		const y = Number(decade[1]);
 		const ru = /[а-я]/i.test(decade[2]);

@@ -42,14 +42,14 @@ export function parsePlaces(value: unknown): PlaceMention[] {
 		if (!s) return;
 		const links = [...s.matchAll(WIKILINK)].map((m) => m[1].trim());
 		const rest = s.replace(WIKILINK, " ");
-		const years = [...rest.matchAll(/(?<!\d)(\d{4})(?!\d)/g)].map((m) => Number(m[1]));
+		const years = [...rest.matchAll(/(?:^|\D)(\d{4})(?!\d)/g)].map((m) => Number(m[1]));
 		const range = years.length ? { from: years[0], to: years[1] ?? years[0] } : {};
 		if (links.length) {
 			const uncertain = UNCERTAIN.test(rest) || NEAR.test(rest);
 			for (const name of links) out.push({ name, isLink: true, uncertain, ...range });
 			return;
 		}
-		const name = s.replace(/(?<!\d)\d{4}(\s*[-–]\s*\d{4})?(?!\d)/g, "").replace(/\s+/g, " ").replace(/^[,;\s]+|[,;\s]+$/g, "");
+		const name = s.replace(/(^|\D)\d{4}(\s*[-–]\s*\d{4})?(?!\d)/g, "$1").replace(/\s+/g, " ").replace(/^[,;\s]+|[,;\s]+$/g, "");
 		if (!name || UNKNOWN.test(name) || name.length > 80) return;
 		out.push({ name: name.replace(UNCERTAIN, "").trim() || name, isLink: false, uncertain: UNCERTAIN.test(s), ...range });
 	};
