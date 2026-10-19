@@ -121,7 +121,7 @@ Command **Check family tree data** lists:
 ## Installation
 
 - **Community plugins:** Settings → Community plugins → Browse → search for "Family Tree Diagram" → Install → Enable.
-- **Manual:** download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/vicmosin/obsidian-family-tree-diagramm/releases/latest) into `<vault>/.obsidian/plugins/family-tree-diagram/`, then enable the plugin under Settings → Community plugins.
+- **Manual:** download `family-tree-diagram-<version>.zip` from the [latest release](https://github.com/vicmosin/obsidian-family-tree-diagramm/releases/latest), unzip it into `<vault>/.obsidian/plugins/` (it contains the `family-tree-diagram` folder), then enable the plugin under Settings → Community plugins.
 
 ## Network use
 
@@ -147,7 +147,7 @@ First run `npm version patch` (or `minor` / `major`), or edit `version` in `mani
 - **On GitHub:** Actions → **Release Obsidian plugin** → **Run workflow** on `main`. When it finishes, open Releases, edit the new draft, add release notes and select **Publish release**. Publishing creates the version tag.
 - **From the command line:** `git push --follow-tags` after `npm version`. The tag starts the same workflow.
 
-The [release workflow](.github/workflows/release.yml) checks the tag matches the manifest, lints, tests, builds, attests the files and creates a draft release with `main.js`, `manifest.json` and `styles.css`. If the release already exists, it replaces those files instead.
+The [release workflow](.github/workflows/release.yml) checks the tag matches the manifest, lints, tests, builds, attests the files and creates a draft release with `main.js`, `manifest.json`, `styles.css` and a zip for manual installs. If the release already exists, it replaces those files instead.
 
 ## License
 

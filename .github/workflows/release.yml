@@ -3,8 +3,9 @@
 # - Command line: push a tag equal to it (`npm version patch && git push --follow-tags`).
 # - GitHub website: Actions → "Release Obsidian plugin" → Run workflow. This creates a draft
 #   release; publishing the draft creates the tag.
-# Either way the release gets main.js, manifest.json and styles.css attached. Running again for a
-# version that already has a release replaces its files.
+# Either way the release gets main.js, manifest.json and styles.css attached (what Obsidian
+# downloads), plus a zip with the plugin folder for manual installs. Running again for a version
+# that already has a release replaces its files.
 name: Release Obsidian plugin
 
 on:
@@ -46,6 +47,16 @@ jobs:
           npm test
           npm run build
 
+      - name: Package zip for manual installs
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          id="$(node -p "require('./manifest.json').id")"
+          mkdir -p "package/$id"
+          cp main.js manifest.json styles.css "package/$id/"
+          (cd package && zip -r "../$id-$TAG.zip" "$id")
+          echo "ZIP=$id-$TAG.zip" >> "$GITHUB_ENV"
+
       - name: Generate artifact attestation
         uses: actions/attest@v4
         with:
@@ -53,6 +64,7 @@ jobs:
             main.js
             manifest.json
             styles.css
+            ${{ env.ZIP }}
 
       - name: Create or update release
         env:
@@ -60,12 +72,12 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
         run: |
           if gh release view "$TAG" > /dev/null 2>&1; then
-            gh release upload "$TAG" main.js manifest.json styles.css --clobber
+            gh release upload "$TAG" main.js manifest.json styles.css "$ZIP" --clobber
           else
             # --target sets the commit the tag will point to once the draft is published
             gh release create "$TAG" \
               --title="$TAG" \
               --draft \
               --target "$GITHUB_SHA" \
-              main.js manifest.json styles.css
+              main.js manifest.json styles.css "$ZIP"
           fi
