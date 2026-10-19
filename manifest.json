@@ -1,7 +1,7 @@
 {
 	"id": "family-tree-diagram",
 	"name": "Family Tree Diagram",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"minAppVersion": "1.7.2",
 	"description": "Build an interactive family tree, timeline and map from person notes, with relationship labels and checks for missing or conflicting data.",
 	"author": "Victor Mosin",
