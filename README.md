@@ -138,7 +138,7 @@ No names, dates or other details about people are ever sent. Without a connectio
 
 - `npm install`, then `npm run dev` rebuilds on change (symlink the folder into a test vault's plugins directory).
 - `npm test` runs the parsing, layout, kinship and timeline tests.
-- `npm run lint` runs [Obsidian's ESLint plugin](https://github.com/obsidianmd/eslint-plugin), the same checks the Community directory uses, including manifest validation.
+- `npm run lint` runs [Obsidian's ESLint plugin](https://github.com/obsidianmd/eslint-plugin), the same checks the Community directory uses, including manifest validation, and stylelint with the directory's CSS checks (no duplicate properties, no `!important`, features supported by Obsidian's Chromium).
 
 ### Releasing
 
