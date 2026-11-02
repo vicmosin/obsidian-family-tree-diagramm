@@ -1,10 +1,11 @@
-import { debounce, getAllTags, Menu, normalizePath, Notice, Plugin, TFile } from "obsidian";
+import { debounce, getAllTags, Menu, normalizePath, Notice, parseFrontMatterAliases, Plugin, TFile } from "obsidian";
 import { DEFAULT_LAYOUT, LayoutOptions } from "./layout";
 import { ReverseFix } from "./check";
 import { CheckModal } from "./checkModal";
 import { Kinship } from "./kinship";
 import { GeocodeModal } from "./geocodeModal";
-import { collectPlaces, parseLocation, Place } from "./places";
+import { collectPlaces, Coords, parseLocation, Place, PlaceIndex, PlaceNote } from "./places";
+import { migratePlaceCache, newNoteFolder, savePlaceCoords } from "./placeNotes";
 import { buildGraph, extractLinks, FamilyGraph, Person, RawNote, RELATION_FIELDS } from "./model";
 import { RenderExtras, RendererCallbacks } from "./render";
 import { DEFAULT_SETTINGS, FamilyTreeSettings, FamilyTreeSettingTab } from "./settings";
@@ -35,6 +36,15 @@ export default class FamilyTreePlugin extends Plugin {
 		this.addCommand({ id: "open-family-tree", name: "Open family tree", callback: () => this.activateView() });
 		this.addCommand({ id: "open-family-map", name: "Open family map", callback: () => this.activateView(undefined, "map") });
 		this.addCommand({ id: "find-place-coordinates", name: "Find coordinates for places", callback: () => this.openGeocode() });
+		this.addCommand({
+			id: "move-remembered-places",
+			name: "Move remembered place coordinates into notes",
+			checkCallback: (checking) => {
+				if (!Object.keys(this.settings.placeCache).length) return false;
+				if (!checking) void this.migratePlaceCache();
+				return true;
+			},
+		});
 		this.addCommand({ id: "open-family-timeline", name: "Open family timeline", callback: () => this.activateView(undefined, "timeline") });
 		this.addCommand({
 			id: "focus-current-person",
@@ -79,7 +89,7 @@ export default class FamilyTreePlugin extends Plugin {
 		this.registerEvent(this.app.vault.on("delete", invalidate));
 	}
 
-	/** Birth/death/lived places of `visible` people, with coordinates from place notes or the plugin's cache */
+	/** Birth/death/lived places of `visible` people, with coordinates from place notes */
 	places(visible: Set<string>): Map<string, Place> {
 		const { metadataCache } = this.app;
 		return collectPlaces(
@@ -87,11 +97,48 @@ export default class FamilyTreePlugin extends Plugin {
 			visible,
 			(link, from) => {
 				const f = metadataCache.getFirstLinkpathDest(link, from);
-				if (!(f instanceof TFile) || f.extension !== "md") return null;
-				const fm: Record<string, unknown> | undefined = metadataCache.getFileCache(f)?.frontmatter;
-				return { path: f.path, name: f.basename, coords: parseLocation(fm?.location ?? fm?.coordinates) };
+				return f instanceof TFile && f.extension === "md" ? this.placeNote(f) : null;
 			},
+			this.placeIndex(),
 			this.settings.placeCache
+		);
+	}
+
+	private placeNote(file: TFile): PlaceNote {
+		const fm: Record<string, unknown> | undefined = this.app.metadataCache.getFileCache(file)?.frontmatter;
+		return {
+			path: file.path,
+			name: file.basename,
+			aliases: parseFrontMatterAliases(fm ?? null) ?? [],
+			coords: parseLocation(fm?.location ?? fm?.coordinates ?? fm?.geo),
+		};
+	}
+
+	/** Notes with `type: place` or with coordinates, in any folder */
+	private placeIndex(): PlaceIndex {
+		const notes: PlaceNote[] = [];
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			const fm: Record<string, unknown> | undefined = this.app.metadataCache.getFileCache(file)?.frontmatter;
+			if (!fm) continue;
+			const types = Array.isArray(fm.type) ? fm.type : [fm.type];
+			if (types.includes("place") || fm.location != null || fm.coordinates != null || fm.geo != null) notes.push(this.placeNote(file));
+		}
+		return new PlaceIndex(notes);
+	}
+
+	/** Saves coordinates in the place's note, creating the note if needed */
+	savePlaceCoords(place: Place, coords: Coords): Promise<"updated" | "created"> {
+		return savePlaceCoords(this.app, place, coords, this.settings.placeFolder);
+	}
+
+	/** Moves coordinates remembered in plugin data (before 1.1.0) into place notes */
+	async migratePlaceCache(): Promise<void> {
+		const places = [...this.places(new Set(this.graph().persons.keys())).values()];
+		const { moved, left } = await migratePlaceCache(this.app, places, this.settings.placeCache, this.settings.placeFolder);
+		await this.saveSettings();
+		new Notice(
+			`Moved ${moved} place${moved === 1 ? "" : "s"} into notes.` +
+				(left ? ` ${left} remembered place${left === 1 ? " isn't" : "s aren't"} mentioned in any person note and stayed in plugin data.` : "")
 		);
 	}
 
@@ -368,13 +415,12 @@ export default class FamilyTreePlugin extends Plugin {
 		].join("\n");
 
 		const name = (p.linktext ?? p.fullName).replace(/[\\/:*?"<>|]/g, "");
-		const folder = this.settings.newPersonFolder;
+		const folder = await newNoteFolder(this.app, this.settings.newPersonFolder);
 		const path = normalizePath(folder ? `${folder}/${name}.md` : `${name}.md`);
 		if (this.app.vault.getAbstractFileByPath(path)) {
 			new Notice(`${path} already exists`);
 			return;
 		}
-		if (folder && !this.app.vault.getAbstractFileByPath(normalizePath(folder))) await this.app.vault.createFolder(folder);
 		const file = await this.app.vault.create(path, fm);
 		await this.app.workspace.getLeaf("tab").openFile(file);
 		new Notice(`Created ${p.fullName}`);

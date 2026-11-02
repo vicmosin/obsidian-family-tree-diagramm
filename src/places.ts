@@ -86,18 +86,57 @@ export interface Place {
 	events: PlaceEvent[];
 }
 
-/** What the vault knows about a place link: its note and the note's `location` */
-export type PlaceResolver = (link: string, fromPath: string) => { path: string; name: string; coords?: Coords } | null;
+/** A note describing a place: `type: place`, or any note with coordinates */
+export interface PlaceNote {
+	path: string;
+	/** File name without extension */
+	name: string;
+	/** Other names from the `aliases` property, e.g. a city's former name */
+	aliases: string[];
+	coords?: Coords;
+}
+
+/** Finds place notes by file name or alias, case-insensitively, wherever they are in the vault */
+export class PlaceIndex {
+	private byName = new Map<string, PlaceNote>();
+
+	constructor(notes: PlaceNote[]) {
+		// File names win over aliases when both match
+		for (const n of notes) for (const a of n.aliases) this.add(a, n, false);
+		for (const n of notes) this.add(n.name, n, true);
+	}
+
+	find(name: string): PlaceNote | undefined {
+		return this.byName.get(norm(name));
+	}
+
+	private add(name: string, note: PlaceNote, override: boolean) {
+		const k = norm(name);
+		if (k && (override || !this.byName.has(k))) this.byName.set(k, note);
+	}
+}
+
+function norm(s: string) {
+	return s.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/** Resolves a link from a person note to a note (any note, not only place notes), or null */
+export type LinkResolver = (link: string, fromPath: string) => PlaceNote | null;
 
 export function placeKey(name: string) {
 	return "name:" + name.trim().toLowerCase();
 }
 
+/**
+ * @param resolveLink resolves `[[links]]`; plain-text names and links without a note are looked up in `index`
+ * @param legacyCache coordinates stored in plugin data by versions before 1.1.0, until moved into notes
+ */
 export function collectPlaces(
 	g: FamilyGraph,
 	visible: Set<string>,
-	resolve: PlaceResolver,
-	cache: Record<string, Coords>
+	resolveLink: LinkResolver,
+	index: PlaceIndex,
+	legacyCache: Record<string, Coords> = {}
 ): Map<string, Place> {
 	const places = new Map<string, Place>();
 	for (const id of visible) {
@@ -110,11 +149,12 @@ export function collectPlaces(
 		];
 		for (const [role, raw] of roles) {
 			for (const m of parsePlaces(raw)) {
-				const note = m.isLink ? resolve(m.name, p.path ?? "") : null;
+				const note = (m.isLink ? resolveLink(m.name, p.path ?? "") : null) ?? index.find(m.name) ?? null;
 				const key = note?.path ?? placeKey(m.name);
 				let place = places.get(key);
 				if (!place) {
-					place = { key, name: note?.name ?? m.name, notePath: note?.path, coords: note?.coords ?? cache[key], events: [] };
+					const coords = note?.coords ?? legacyCache[placeKey(m.name)];
+					place = { key, name: note?.name ?? m.name, notePath: note?.path, coords, events: [] };
 					places.set(key, place);
 				}
 				place.events.push({ person: id, role, year: eventYear(p, role, m), to: role === "lived" ? m.to : undefined, uncertain: m.uncertain });

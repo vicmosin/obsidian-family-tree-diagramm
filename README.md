@@ -80,7 +80,20 @@ lived_in:
 death_place: "[[Toronto]]"
 ```
 
-- Coordinates come from the place note's `location: [lat, lng]` (same format as the Map View plugin). Use **Find coordinates for places** (or the 📍 button on the map) to look them up on OpenStreetMap. You check each match before it's saved. Places that have no note are remembered by the plugin.
+- **Coordinates live in place notes**, so they stay in your vault and travel with it. A place note is any note with `type: place` or with coordinates, in any folder:
+
+  ```yaml
+  ---
+  type: place
+  location: [53.8, -1.55]   # same format as the Map View plugin; `geo: 53.8, -1.55` also works
+  aliases: [Loidis]         # former or other names; text and links using them find this note
+  ---
+  Notes about this place.
+  ```
+
+- A place is matched to its note by link, by file name or by alias, ignoring case. So `birth_place: Leeds` and `birth_place: "[[Leeds]]"` both find `Leeds.md` wherever it is.
+- **Find coordinates for places** (command, the 📍 button on the map, or Settings → Map) looks places up on OpenStreetMap. You check each match before it's saved. Coordinates are written to the place's note, and places without a note get one: in **Folder for place notes** if you set it, otherwise in Obsidian's *Default location for new notes* (Settings → Files and links).
+- Versions before 1.1.0 kept coordinates for places without a note in the plugin's data, which is lost if the plugin is removed. Run **Move remembered place coordinates into notes** (or the button in Settings → Map) once to turn them into place notes.
 - When a value has a link plus text ("предположительно рядом [[Leeds, England]]", "maybe near [[Leeds, England]]"), only the link counts and the place is marked uncertain.
 - Click a pin for everyone connected to that place (with relationship labels). The slider at the bottom shows only what happened up to a given year.
 - **Online / offline:** the map uses OpenStreetMap tiles when there's a connection. Country borders are built into the plugin and drawn underneath, so without internet you still get borders, pins, names and routes (marked "Offline — built-in map").

@@ -89,3 +89,43 @@ export class PluginSettingTab {
 	) {}
 }
 export class App {}
+
+// Minimal vault for src/placeNotes.ts
+export class TFile {
+	frontmatter: Record<string, unknown> = {};
+	constructor(public path: string) {}
+	get basename() {
+		return this.path.split("/").pop()!.replace(/\.md$/, "");
+	}
+}
+export class TFolder {
+	constructor(public path: string) {}
+}
+export function normalizePath(p: string) {
+	return p.replace(/[\\/]+/g, "/").replace(/^\/|\/$/g, "");
+}
+
+export function mockApp(defaultFolder: string) {
+	const files = new Map<string, TFile | TFolder>();
+	const app = {
+		files,
+		vault: {
+			getFileByPath: (p: string) => {
+				const f = files.get(p);
+				return f instanceof TFile ? f : null;
+			},
+			getAbstractFileByPath: (p: string) => files.get(p) ?? null,
+			createFolder: async (p: string) => void files.set(p, new TFolder(p)),
+			create: async (p: string) => {
+				const f = new TFile(p);
+				files.set(p, f);
+				return f;
+			},
+		},
+		fileManager: {
+			getNewFileParent: () => new TFolder(defaultFolder),
+			processFrontMatter: async (f: TFile, fn: (fm: Record<string, unknown>) => void) => fn(f.frontmatter),
+		},
+	};
+	return app;
+}

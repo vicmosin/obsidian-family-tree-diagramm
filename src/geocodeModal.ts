@@ -1,4 +1,4 @@
-import { Modal, Notice, requestUrl, TFile } from "obsidian";
+import { Modal, Notice, requestUrl } from "obsidian";
 import type FamilyTreePlugin from "./main";
 import { Coords, Place } from "./places";
 
@@ -42,7 +42,7 @@ export class GeocodeModal extends Modal {
 			cls: "ft-check-hint",
 			text:
 				"Place names (not people) are sent to OpenStreetMap's search. Check each match before saving — old or renamed places can be found in the wrong country. " +
-				"Places with a note get `location: [lat, lng]` in that note; others are remembered by the plugin.",
+				"Coordinates are saved as `location: [lat, lng]` in each place's note. Places without a note get one.",
 		});
 
 		const table = contentEl.createEl("table", { cls: "ft-geo-table" });
@@ -110,23 +110,14 @@ export class GeocodeModal extends Modal {
 	}
 
 	private async save() {
-		let notes = 0;
-		let cached = 0;
+		let updated = 0;
+		let created = 0;
 		for (const c of this.candidates) {
 			if (!c.accept || !c.coords) continue;
-			const file = c.place.notePath ? this.app.vault.getAbstractFileByPath(c.place.notePath) : null;
-			if (file instanceof TFile) {
-				await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-					fm.location = c.coords;
-				});
-				notes++;
-			} else {
-				this.plugin.settings.placeCache[c.place.key] = c.coords;
-				cached++;
-			}
+			if ((await this.plugin.savePlaceCoords(c.place, c.coords)) === "created") created++;
+			else updated++;
 		}
-		await this.plugin.saveSettings();
-		new Notice(`Saved coordinates: ${notes} in place notes, ${cached} in plugin data`);
+		new Notice(`Saved coordinates: ${updated} place note${updated === 1 ? "" : "s"} updated, ${created} created`);
 		this.close();
 	}
 }

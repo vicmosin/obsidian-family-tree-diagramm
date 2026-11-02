@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildGraph, RawNote } from "../src/model";
-import { collectPlaces, lifePath, parseLocation, parsePlaces } from "../src/places";
+import { collectPlaces, lifePath, parseLocation, parsePlaces, PlaceIndex } from "../src/places";
 
 test("parsePlaces: links win over surrounding text", () => {
 	assert.deepEqual(
@@ -42,15 +42,36 @@ test("collectPlaces groups people by place and orders a life path", () => {
 	const places = collectPlaces(
 		g,
 		new Set(g.persons.keys()),
-		(link) => (link in placeNotes ? { path: `Places/${link}.md`, name: link, coords: placeNotes[link] } : null),
-		{ "Places/Manchester.md": [53.48, -2.24] }
+		(link) => (link in placeNotes ? { path: `Places/${link}.md`, name: link, aliases: [], coords: placeNotes[link] } : null),
+		new PlaceIndex([]),
+		{ "name:manchester": [53.48, -2.24] }
 	);
 	const leeds = places.get("Places/Leeds, England.md")!;
 	assert.equal(leeds.events.length, 2);
 	assert.equal(leeds.events.find((e) => e.person === "George")!.uncertain, true);
-	assert.deepEqual(places.get("Places/Manchester.md")!.coords, [53.48, -2.24], "coordinates from the plugin cache");
+	assert.deepEqual(places.get("Places/Manchester.md")!.coords, [53.48, -2.24], "note without coordinates falls back to the pre-1.1.0 plugin cache");
 	assert.deepEqual(
 		lifePath("George", places).map((s) => s.place.name),
 		["Leeds, England", "Manchester", "Toronto"]
 	);
+});
+
+test("place notes are found by name or alias, in any folder", () => {
+	const n = (basename: string, fm: Record<string, unknown>): RawNote => ({ id: basename, basename, frontmatter: fm });
+	const notes = [
+		n("George", { birth_date: "1931", birth_place: "York", lived_in: ["[[New Amsterdam]] 1950-1960", "new york 1961"] }),
+		n("Helen", { birth_place: "[[Leeds]]" }),
+	];
+	const g = buildGraph(notes, (l) => notes.find((x) => x.basename === l) ?? null);
+	const index = new PlaceIndex([
+		{ path: "Anywhere/Deep/York.md", name: "York", aliases: [], coords: [53.96, -1.08] },
+		{ path: "Geo/New York.md", name: "New York", aliases: ["New Amsterdam"], coords: [40.71, -74.0] },
+		// An alias never hides a note whose file name matches
+		{ path: "Geo/Leeds.md", name: "Leeds", aliases: ["York"], coords: [53.8, -1.55] },
+	]);
+	const places = collectPlaces(g, new Set(g.persons.keys()), () => null, index);
+	assert.deepEqual([...places.keys()].sort(), ["Anywhere/Deep/York.md", "Geo/Leeds.md", "Geo/New York.md"]);
+	assert.equal(places.get("Geo/New York.md")!.events.length, 2, "former name (alias) and lower-case text both match");
+	assert.equal(places.get("Anywhere/Deep/York.md")!.events.length, 1);
+	assert.deepEqual(places.get("Geo/Leeds.md")!.coords, [53.8, -1.55], "unresolved link falls back to the index");
 });
