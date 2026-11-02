@@ -11,15 +11,20 @@ function setup() {
 	graph.persons.set("Family/George Miller.md", { id: "Family/George Miller.md", fullName: "George Miller", name: "George Miller", ghost: false, gender: "m" });
 	let saves = 0;
 	let geocodes = 0;
+	let migrations = 0;
 	const plugin = {
 		settings: { ...DEFAULT_SETTINGS, fields: { ...DEFAULT_FIELDS }, placeCache: { "name:leeds": [53.8, -1.55] } } as FamilyTreeSettings,
 		graph: () => graph,
 		saveSettings: async () => void saves++,
 		openGeocode: () => void geocodes++,
+		migratePlaceCache: async () => {
+			migrations++;
+			plugin.settings.placeCache = {};
+		},
 	};
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const tab = new FamilyTreeSettingTab({} as any, plugin as any);
-	return { tab, plugin, saves: () => saves, geocodes: () => geocodes };
+	return { tab, plugin, saves: () => saves, geocodes: () => geocodes, migrations: () => migrations };
 }
 
 const groups = (tab: FamilyTreeSettingTab) => tab.getSettingDefinitions() as SettingDefinitionGroup[];
@@ -32,7 +37,7 @@ test("definitions: every control key reads a real setting", () => {
 		["Relationship labels", "Timeline", "Map", "Which notes are people", "Property names", "Diagram"]
 	);
 	const keys = items(tab).flatMap((d) => ("control" in d && d.control ? [d.control.key] : []));
-	assert.equal(keys.length, 20, "same 20 controls as the old settings screen");
+	assert.equal(keys.length, 21, "the 20 controls of 1.0.x plus the place notes folder");
 	for (const k of keys) assert.notEqual(tab.getControlValue(k), undefined, k);
 	assert.equal(tab.getControlValue("fields.parentOf"), "parent_of");
 	const me = items(tab).find((d) => d.name === "Me")!;
@@ -58,7 +63,7 @@ test("setControlValue normalises input and saves", async () => {
 
 test("Obsidian < 1.13: display() draws the same settings with the classic API", async () => {
 	setApiVersionOk(false);
-	const { tab, plugin, geocodes } = setup();
+	const { tab, plugin, geocodes, migrations } = setup();
 	tab.display();
 	assert.deepEqual(
 		rendered.filter((r) => r.heading).map((r) => r.name),
@@ -70,11 +75,13 @@ test("Obsidian < 1.13: display() draws the same settings with the classic API", 
 	assert.equal(row("Default focus depth").kind, "slider");
 	assert.deepEqual(
 		rendered.filter((r) => r.kind === "button").map((r) => r.buttonText),
-		["Restore", "Find", "Forget"]
+		["Restore", "Find", "Move"]
 	);
 
 	row("Tag").onChange!("#people");
 	assert.equal(plugin.settings.tag, "people");
+	row("Folder for place notes").onChange!(" Geo/Places ");
+	assert.equal(plugin.settings.placeFolder, "Geo/Places");
 
 	row("Find coordinates").onClick!();
 	assert.equal(geocodes(), 1);
@@ -85,10 +92,12 @@ test("Obsidian < 1.13: display() draws the same settings with the classic API", 
 	await new Promise((r) => setTimeout(r, 0));
 	assert.equal(plugin.settings.events, DEFAULT_EVENTS_RU);
 	assert.equal(rendered.find((r) => r.name === "Historical events")!.value, DEFAULT_EVENTS_RU);
-	rendered.find((r) => r.name === "Forget remembered coordinates")!.onClick!();
+
+	// The migration row only shows while there is something to move
+	rendered.find((r) => r.name === "Move remembered coordinates into notes")!.onClick!();
 	await new Promise((r) => setTimeout(r, 0));
-	assert.deepEqual(plugin.settings.placeCache, {});
-	assert.match(rendered.find((r) => r.name === "Forget remembered coordinates")!.desc!, /^0 places/);
+	assert.equal(migrations(), 1);
+	assert.equal(rendered.find((r) => r.name === "Move remembered coordinates into notes"), undefined);
 });
 
 test("Obsidian 1.13+: actions refresh through update()", async () => {
@@ -96,11 +105,17 @@ test("Obsidian 1.13+: actions refresh through update()", async () => {
 	const { tab, plugin } = setup();
 	let updates = 0;
 	(tab as unknown as { update: () => void }).update = () => void updates++;
-	const forget = items(tab).find((d) => d.name === "Forget remembered coordinates")!;
-	assert.ok("action" in forget && forget.action);
-	forget.action({} as HTMLElement, 0);
+	const restore = items(tab).find((d) => d.name === "Restore default events")!;
+	assert.ok("action" in restore && restore.action);
+	plugin.settings.events = "custom";
+	restore.action({} as HTMLElement, 0);
 	await new Promise((r) => setTimeout(r, 0));
-	assert.deepEqual(plugin.settings.placeCache, {});
+	assert.equal(plugin.settings.events, DEFAULT_EVENTS_RU);
 	assert.equal(updates, 1);
+	const move = items(tab).find((d) => d.name === "Move remembered coordinates into notes")!;
+	const visible = () => typeof move.visible === "function" && move.visible();
+	assert.equal(visible(), true, "shown while plugin data still holds coordinates");
+	plugin.settings.placeCache = {};
+	assert.equal(visible(), false, "hidden once everything is moved");
 	setApiVersionOk(false);
 });

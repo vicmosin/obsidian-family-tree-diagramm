@@ -22,7 +22,9 @@ export interface FamilyTreeSettings {
 	showLabels: boolean;
 	/** Historical events on the timeline, one per line: "1941-1945 Великая Отечественная война" */
 	events: string;
-	/** Coordinates found for places that have no note of their own, keyed by placeKey() */
+	/** Folder for new place notes; empty = Obsidian's default location for new notes */
+	placeFolder: string;
+	/** Coordinates kept in plugin data by versions before 1.1.0, until moved into place notes */
 	placeCache: Record<string, Coords>;
 }
 
@@ -38,6 +40,7 @@ export const DEFAULT_SETTINGS: FamilyTreeSettings = {
 	labelLanguage: "ru",
 	showLabels: true,
 	events: DEFAULT_EVENTS_RU,
+	placeFolder: "",
 	placeCache: {},
 };
 
@@ -107,13 +110,19 @@ export class FamilyTreeSettingTab extends PluginSettingTab {
 				items: [
 					{
 						name: "Find coordinates",
-						desc: "Look up places on OpenStreetMap and save `location: [lat, lng]` into place notes.",
+						desc: "Look up places on OpenStreetMap and save `location: [lat, lng]` into each place's note. Places without a note get one.",
 						action: () => this.plugin.openGeocode(),
 					},
 					{
-						name: "Forget remembered coordinates",
-						desc: `${Object.keys(s.placeCache).length} places without a note of their own are remembered by the plugin.`,
-						action: () => void this.change(() => (s.placeCache = {})),
+						name: "Folder for place notes",
+						desc: "Where new place notes are created. Existing place notes are found in any folder. Empty = Obsidian's default location for new notes.",
+						control: { type: "text", key: "placeFolder" },
+					},
+					{
+						name: "Move remembered coordinates into notes",
+						desc: `${Object.keys(s.placeCache).length} places found by an earlier version are stored in plugin data, which is lost if the plugin is removed. This creates a note for each.`,
+						visible: () => Object.keys(s.placeCache).length > 0,
+						action: () => void this.plugin.migratePlaceCache().then(() => this.refresh()),
 					},
 				],
 			},
@@ -166,7 +175,7 @@ export class FamilyTreeSettingTab extends PluginSettingTab {
 					},
 					{
 						name: "Folder for new people",
-						desc: "Where notes are created when you click a person that has no note yet. Empty = vault root.",
+						desc: "Where notes are created when you click a person that has no note yet. Empty = Obsidian's default location for new notes.",
 						control: { type: "text", key: "newPersonFolder" },
 					},
 				],
@@ -188,7 +197,7 @@ export class FamilyTreeSettingTab extends PluginSettingTab {
 			const field = key.slice(7) as keyof FieldNames;
 			s.fields[field] = text || DEFAULT_FIELDS[field];
 		} else if (key === "tag") s.tag = text.replace(/^#/, "").trim();
-		else if (key === "typeValue" || key === "photoField" || key === "newPersonFolder" || key === "me") s[key] = text;
+		else if (key === "typeValue" || key === "photoField" || key === "newPersonFolder" || key === "placeFolder" || key === "me") s[key] = text;
 		else if (key === "labelLanguage") s.labelLanguage = value === "en" ? "en" : "ru";
 		else if (key === "events" && typeof value === "string") s.events = value;
 		else if ((key === "showLabels" || key === "inferSpouseParent") && typeof value === "boolean") s[key] = value;
@@ -205,6 +214,11 @@ export class FamilyTreeSettingTab extends PluginSettingTab {
 	private async change(apply: () => void) {
 		apply();
 		await this.plugin.saveSettings();
+		this.refresh();
+	}
+
+	/** Redraws after a change that alters other rows */
+	private refresh() {
 		const tab = this as unknown as { update?: () => void };
 		if (requireApiVersion("1.13.0") && typeof tab.update === "function") tab.update();
 		else this.renderLegacy();
@@ -217,7 +231,11 @@ export class FamilyTreeSettingTab extends PluginSettingTab {
 			if (!("items" in item)) continue;
 			const group = item as Group;
 			if (group.heading) new Setting(containerEl).setName(group.heading).setHeading();
-			for (const def of group.items ?? []) if (!("items" in def)) this.renderLegacyItem(def);
+			for (const def of group.items ?? []) {
+				if ("items" in def) continue;
+				if (def.visible === false || (typeof def.visible === "function" && !def.visible())) continue;
+				this.renderLegacyItem(def);
+			}
 		}
 	}
 
