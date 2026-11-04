@@ -1,5 +1,6 @@
 import { ItemView, MarkdownRenderChild, setIcon, TFile, WorkspaceLeaf } from "obsidian";
 import { keepTouchesInside } from "./touch";
+import { t } from "./i18n";
 import type FamilyTreePlugin from "./main";
 import { computeLayout } from "./layout";
 import { FamilyGraph, focusSet } from "./model";
@@ -13,10 +14,10 @@ type Mode = "all" | "focus";
 export type Display = "tree" | "timeline" | "map";
 type AnyRenderer = TreeRenderer | TimelineRenderer | MapRenderer;
 
-const DISPLAYS: { id: Display; icon: string; label: string }[] = [
-	{ id: "tree", icon: "network", label: "Tree" },
-	{ id: "timeline", icon: "calendar-range", label: "Timeline" },
-	{ id: "map", icon: "map", label: "Map" },
+const DISPLAYS: { id: Display; icon: string }[] = [
+	{ id: "tree", icon: "network" },
+	{ id: "timeline", icon: "calendar-range" },
+	{ id: "map", icon: "map" },
 ];
 
 function createRenderer(plugin: FamilyTreePlugin, display: Display, container: HTMLElement, view: FamilyTreeView | undefined, embedded: boolean): AnyRenderer {
@@ -42,7 +43,7 @@ function feedRenderer(
 	const graph = plugin.graph();
 	const inferSpouseParent = plugin.settings.inferSpouseParent;
 	if (renderer instanceof TimelineRenderer) {
-		const events = parseEvents(plugin.settings.events);
+		const events = parseEvents(plugin.events());
 		renderer.setData({ graph, visible: d.visible, extras: d.extras, events, order: d.order, highlight: d.highlight, inferSpouseParent }, keepView);
 	} else if (renderer instanceof MapRenderer) {
 		renderer.setData({ graph, visible: d.visible, extras: d.extras, highlight: d.highlight, places: plugin.places(d.visible) }, keepView);
@@ -82,83 +83,16 @@ export class FamilyTreeView extends ItemView {
 		return VIEW_TYPE;
 	}
 	getDisplayText() {
-		return this.display === "timeline" ? "Family timeline" : this.display === "map" ? "Family map" : "Family tree";
+		return t().view.title[this.display];
 	}
 	getIcon() {
 		return "network";
 	}
 
 	async onOpen() {
-		const root = this.contentEl;
-		root.empty();
-		root.addClass("ft-view");
-
-		const bar = root.createDiv("ft-toolbar");
-		const seg = bar.createDiv("ft-segmented");
-		for (const d of DISPLAYS) this.displayBtns.set(d.id, button(seg, d.icon, d.label, () => this.setDisplay(d.id)));
-		this.orderEl = bar.createEl("select", { cls: "dropdown", attr: { "aria-label": "Order" } });
-		this.orderEl.createEl("option", { text: "By family", value: "family" });
-		this.orderEl.createEl("option", { text: "By birth", value: "birth" });
-		this.orderEl.value = this.order;
-		this.orderEl.onchange = () => {
-			this.order = this.orderEl.value as TimelineOrder;
-			this.refresh(true);
-		};
-		this.modeBtn = button(bar, "users", "Show everyone / focus on the active person", () => {
-			this.setMode(this.mode === "all" ? "focus" : "all");
-		});
-		this.depthEl = bar.createEl("select", { cls: "dropdown ft-depth", attr: { "aria-label": "Generations" } });
-		for (let d = 1; d <= 8; d++) this.depthEl.createEl("option", { text: `±${d} gen`, value: String(d) });
-		this.depthEl.value = String(this.depth);
-		this.depthEl.onchange = () => {
-			this.depth = Number(this.depthEl.value);
-			this.refresh();
-		};
-		this.labelsBtn = button(bar, "tags", "Show relationship labels", () => {
-			this.showLabels = !this.showLabels;
-			this.labelsBtn.toggleClass("is-active", this.showLabels);
-			this.refresh(true);
-		});
-		this.labelsBtn.toggleClass("is-active", this.showLabels);
-
-		const search = bar.createEl("input", { type: "search", cls: "ft-search", attr: { placeholder: "Find person…" } });
-		const list = bar.createEl("datalist", { attr: { id: "ft-people-" + Math.random().toString(36).slice(2) } });
-		search.setAttr("list", list.id);
-		search.addEventListener("focus", () => {
-			list.empty();
-			for (const p of this.graph?.persons.values() ?? []) list.createEl("option", { value: p.fullName });
-		});
-		search.addEventListener("keydown", (e) => {
-			if (e.key !== "Enter") return;
-			const hit = this.graph?.findByName(search.value)[0];
-			if (!hit) return;
-			if (this.mode === "focus") {
-				this.root = hit.id;
-				this.refresh();
-			} else {
-				this.renderer?.setHighlight(hit.id);
-				this.renderer?.centerOn(hit.id);
-			}
-		});
-
-		this.refEl = bar.createDiv("ft-ref");
-		bar.createDiv("ft-spacer");
-		this.statusEl = bar.createDiv("ft-status");
-		button(bar, "crosshair", "Center on the active note", () => {
-			const id = this.activePersonId();
-			if (!id) return;
-			if (this.mode === "focus") {
-				this.root = id;
-				this.refresh();
-			} else this.renderer?.centerOn(id);
-		});
-		button(bar, "zoom-in", "Zoom in", () => this.renderer?.zoomBy(1.25));
-		button(bar, "zoom-out", "Zoom out", () => this.renderer?.zoomBy(0.8));
-		button(bar, "maximize", "Fit to screen", () => this.renderer?.fit());
-
-		this.canvas = root.createDiv("ft-canvas");
-		keepTouchesInside(this, this.canvas);
-		this.mountRenderer();
+		this.contentEl.addClass("ft-view");
+		this.buildUi();
+		keepTouchesInside(this, () => this.canvas);
 
 		this.registerEvent(
 			this.app.workspace.on("file-open", (file) => {
@@ -181,6 +115,88 @@ export class FamilyTreeView extends ItemView {
 		this.updateModeButton();
 		// Layout needs the container size
 		window.requestAnimationFrame(() => this.refresh(false));
+	}
+
+	/** Redraws toolbar and diagram, e.g. after the interface language changed */
+	rebuild() {
+		this.buildUi();
+		this.updateModeButton();
+		this.refresh(true);
+	}
+
+	private buildUi() {
+		const tr = t().view;
+		const root = this.contentEl;
+		this.renderer?.destroy();
+		this.renderer = undefined;
+		this.displayBtns.clear();
+		root.empty();
+
+		const bar = root.createDiv("ft-toolbar");
+		const seg = bar.createDiv("ft-segmented");
+		for (const d of DISPLAYS) this.displayBtns.set(d.id, button(seg, d.icon, tr.display[d.id], () => this.setDisplay(d.id)));
+		this.orderEl = bar.createEl("select", { cls: "dropdown", attr: { "aria-label": tr.order } });
+		this.orderEl.createEl("option", { text: tr.byFamily, value: "family" });
+		this.orderEl.createEl("option", { text: tr.byBirth, value: "birth" });
+		this.orderEl.value = this.order;
+		this.orderEl.onchange = () => {
+			this.order = this.orderEl.value as TimelineOrder;
+			this.refresh(true);
+		};
+		this.modeBtn = button(bar, "users", tr.modeAll, () => {
+			this.setMode(this.mode === "all" ? "focus" : "all");
+		});
+		this.depthEl = bar.createEl("select", { cls: "dropdown ft-depth", attr: { "aria-label": tr.generations } });
+		for (let d = 1; d <= 8; d++) this.depthEl.createEl("option", { text: tr.depth(d), value: String(d) });
+		this.depthEl.value = String(this.depth);
+		this.depthEl.onchange = () => {
+			this.depth = Number(this.depthEl.value);
+			this.refresh();
+		};
+		this.labelsBtn = button(bar, "tags", tr.labels, () => {
+			this.showLabels = !this.showLabels;
+			this.labelsBtn.toggleClass("is-active", this.showLabels);
+			this.refresh(true);
+		});
+		this.labelsBtn.toggleClass("is-active", this.showLabels);
+
+		const search = bar.createEl("input", { type: "search", cls: "ft-search", attr: { placeholder: tr.search } });
+		const list = bar.createEl("datalist", { attr: { id: "ft-people-" + Math.random().toString(36).slice(2) } });
+		search.setAttr("list", list.id);
+		search.addEventListener("focus", () => {
+			list.empty();
+			for (const p of this.graph?.persons.values() ?? []) list.createEl("option", { value: p.fullName });
+		});
+		search.addEventListener("keydown", (e) => {
+			if (e.key !== "Enter") return;
+			const hit = this.graph?.findByName(search.value)[0];
+			if (!hit) return;
+			if (this.mode === "focus") {
+				this.root = hit.id;
+				this.refresh();
+			} else {
+				this.renderer?.setHighlight(hit.id);
+				this.renderer?.centerOn(hit.id);
+			}
+		});
+
+		this.refEl = bar.createDiv("ft-ref");
+		bar.createDiv("ft-spacer");
+		this.statusEl = bar.createDiv("ft-status");
+		button(bar, "crosshair", tr.center, () => {
+			const id = this.activePersonId();
+			if (!id) return;
+			if (this.mode === "focus") {
+				this.root = id;
+				this.refresh();
+			} else this.renderer?.centerOn(id);
+		});
+		button(bar, "zoom-in", tr.zoomIn, () => this.renderer?.zoomBy(1.25));
+		button(bar, "zoom-out", tr.zoomOut, () => this.renderer?.zoomBy(0.8));
+		button(bar, "maximize", tr.fit, () => this.renderer?.fit());
+
+		this.canvas = root.createDiv("ft-canvas");
+		this.mountRenderer();
 	}
 
 	async onClose() {
@@ -229,17 +245,17 @@ export class FamilyTreeView extends ItemView {
 		if (this.mode === "focus" && this.root && g.persons.has(this.root)) visible = focusSet(g, this.root, this.depth);
 		else visible = new Set(g.persons.keys());
 
-		this.statusEl.setText(`${visible.size} ${visible.size === 1 ? "person" : "people"}`);
-		if (g.persons.size === 0) this.statusEl.setText(`No notes with type: ${this.plugin.settings.typeValue} found`);
+		this.statusEl.setText(t().view.people(visible.size));
+		if (g.persons.size === 0) this.statusEl.setText(t().view.noPeople(this.plugin.settings.typeValue));
 
 		const ref = this.reference && g.persons.has(this.reference) ? this.reference : this.plugin.meId();
 		const extras: RenderExtras = this.showLabels ? this.plugin.labelExtras(ref, visible) : {};
 		this.refEl.empty();
 		if (this.showLabels && ref && ref !== this.plugin.meId()) {
-			this.refEl.createSpan({ text: `Relative to ${g.persons.get(ref)?.name}` });
-			button(this.refEl, "x", "Back to me", () => this.setReference(undefined));
+			this.refEl.createSpan({ text: t().view.relativeTo(g.persons.get(ref)?.name ?? "") });
+			button(this.refEl, "x", t().view.backToMe, () => this.setReference(undefined));
 		} else if (this.showLabels && !ref) {
-			this.refEl.createSpan({ text: "Right-click yourself → “This is me” to see relationships" });
+			this.refEl.createSpan({ text: t().view.hintMe });
 		}
 
 		const highlight = this.mode === "focus" ? this.root : this.activePersonId();
@@ -249,7 +265,7 @@ export class FamilyTreeView extends ItemView {
 	private updateModeButton() {
 		setIcon(this.modeBtn, this.mode === "all" ? "users" : "user");
 		this.modeBtn.toggleClass("is-active", this.mode === "focus");
-		this.modeBtn.setAttr("aria-label", this.mode === "all" ? "Showing everyone — click to focus on one person" : "Focus mode — click to show everyone");
+		this.modeBtn.setAttr("aria-label", this.mode === "all" ? t().view.modeAll : t().view.modeFocus);
 		this.depthEl.toggle(this.mode === "focus");
 	}
 
@@ -278,10 +294,10 @@ export class FamilyTreeBlock extends MarkdownRenderChild {
 		const wrap = this.containerEl.createDiv("ft-embed");
 		wrap.style.height = `${opts.height}px`;
 		const bar = wrap.createDiv("ft-embed-bar");
-		button(bar, "zoom-in", "Zoom in", () => this.renderer?.zoomBy(1.25));
-		button(bar, "zoom-out", "Zoom out", () => this.renderer?.zoomBy(0.8));
-		button(bar, "maximize", "Fit", () => this.renderer?.fit());
-		button(bar, "external-link", "Open in family tree view", () => {
+		button(bar, "zoom-in", t().view.zoomIn, () => this.renderer?.zoomBy(1.25));
+		button(bar, "zoom-out", t().view.zoomOut, () => this.renderer?.zoomBy(0.8));
+		button(bar, "maximize", t().view.fit, () => this.renderer?.fit());
+		button(bar, "external-link", t().view.openInView, () => {
 			const id = this.resolveRoot(opts.root);
 			void this.plugin.activateView(id, display);
 		});

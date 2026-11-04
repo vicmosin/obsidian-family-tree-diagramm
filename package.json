@@ -1,6 +1,6 @@
 {
   "name": "family-tree-diagram",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Build an interactive family tree, timeline and map from person notes in Obsidian.",
   "main": "main.js",
   "scripts": {

@@ -3,6 +3,7 @@ import { DEFAULT_LAYOUT, LayoutOptions } from "./layout";
 import { ReverseFix } from "./check";
 import { CheckModal } from "./checkModal";
 import { Kinship } from "./kinship";
+import { isDefaultEvents, resolveLang, setLanguage, t } from "./i18n";
 import { GeocodeModal } from "./geocodeModal";
 import { collectPlaces, Coords, parseLocation, Place, PlaceIndex, PlaceNote } from "./places";
 import { migratePlaceCache, newNoteFolder, savePlaceCoords } from "./placeNotes";
@@ -20,6 +21,7 @@ export default class FamilyTreePlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
+		setLanguage(this.settings.language);
 
 		this.registerView(VIEW_TYPE, (leaf) => new FamilyTreeView(leaf, this));
 		this.registerMarkdownCodeBlockProcessor("family-tree", (source, el, ctx) => {
@@ -32,23 +34,23 @@ export default class FamilyTreePlugin extends Plugin {
 			ctx.addChild(new FamilyTreeBlock(el, this, source, ctx.sourcePath, "map"));
 		});
 
-		this.addRibbonIcon("network", "Open family tree", () => this.activateView());
-		this.addCommand({ id: "open-family-tree", name: "Open family tree", callback: () => this.activateView() });
-		this.addCommand({ id: "open-family-map", name: "Open family map", callback: () => this.activateView(undefined, "map") });
-		this.addCommand({ id: "find-place-coordinates", name: "Find coordinates for places", callback: () => this.openGeocode() });
+		this.addRibbonIcon("network", t().commands.openTree, () => this.activateView());
+		this.addCommand({ id: "open-family-tree", name: t().commands.openTree, callback: () => this.activateView() });
+		this.addCommand({ id: "open-family-map", name: t().commands.openMap, callback: () => this.activateView(undefined, "map") });
+		this.addCommand({ id: "find-place-coordinates", name: t().commands.findCoordinates, callback: () => this.openGeocode() });
 		this.addCommand({
 			id: "move-remembered-places",
-			name: "Move remembered place coordinates into notes",
+			name: t().commands.movePlaces,
 			checkCallback: (checking) => {
 				if (!Object.keys(this.settings.placeCache).length) return false;
 				if (!checking) void this.migratePlaceCache();
 				return true;
 			},
 		});
-		this.addCommand({ id: "open-family-timeline", name: "Open family timeline", callback: () => this.activateView(undefined, "timeline") });
+		this.addCommand({ id: "open-family-timeline", name: t().commands.openTimeline, callback: () => this.activateView(undefined, "timeline") });
 		this.addCommand({
 			id: "focus-current-person",
-			name: "Show family tree of current person",
+			name: t().commands.showCurrent,
 			checkCallback: (checking) => {
 				const f = this.app.workspace.getActiveFile();
 				if (!f || !this.graph().persons.has(f.path)) return false;
@@ -58,7 +60,7 @@ export default class FamilyTreePlugin extends Plugin {
 		});
 		this.addCommand({
 			id: "set-me",
-			name: "Set current note as me (for relationship labels)",
+			name: t().commands.setMe,
 			checkCallback: (checking) => {
 				const f = this.app.workspace.getActiveFile();
 				if (!f || !this.isPerson(f)) return false;
@@ -66,14 +68,14 @@ export default class FamilyTreePlugin extends Plugin {
 				return true;
 			},
 		});
-		this.addCommand({ id: "check-data", name: "Check family tree data", callback: () => new CheckModal(this).open() });
+		this.addCommand({ id: "check-data", name: t().commands.checkData, callback: () => new CheckModal(this).open() });
 		// File explorer right-click, the note's "⋯" menu, tab right-click and right-click in the editor
 		const addMenuItem = (menu: Menu, file: TFile | null) => {
 			if (!file || file.extension !== "md") return;
 			const isPerson = this.isPerson(file);
 			menu.addItem((item) =>
 				item
-					.setTitle(isPerson ? "Show in family tree" : "Open family tree")
+					.setTitle(isPerson ? t().menu.showInTree : t().menu.openTree)
 					.setIcon("network")
 					.onClick(() => this.activateView(isPerson ? file.path : undefined))
 			);
@@ -136,16 +138,13 @@ export default class FamilyTreePlugin extends Plugin {
 		const places = [...this.places(new Set(this.graph().persons.keys())).values()];
 		const { moved, left } = await migratePlaceCache(this.app, places, this.settings.placeCache, this.settings.placeFolder);
 		await this.saveSettings();
-		new Notice(
-			`Moved ${moved} place${moved === 1 ? "" : "s"} into notes.` +
-				(left ? ` ${left} remembered place${left === 1 ? " isn't" : "s aren't"} mentioned in any person note and stayed in plugin data.` : "")
-		);
+		new Notice(t().notices.moved(moved, left));
 	}
 
 	openGeocode() {
 		const missing = [...this.places(new Set(this.graph().persons.keys())).values()].filter((p) => !p.coords);
 		if (!missing.length) {
-			new Notice("All places already have coordinates");
+			new Notice(t().notices.allHaveCoords);
 			return;
 		}
 		new GeocodeModal(this, missing).open();
@@ -168,6 +167,21 @@ export default class FamilyTreePlugin extends Plugin {
 
 	layoutOptions(): LayoutOptions {
 		return { ...DEFAULT_LAYOUT, inferSpouseParent: this.settings.inferSpouseParent };
+	}
+
+	/** Applies a new interface language to open views (command names follow after a restart) */
+	applyLanguage() {
+		setLanguage(this.settings.language);
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
+			if (leaf.view instanceof FamilyTreeView) leaf.view.rebuild();
+		}
+		this.listeners.forEach((fn) => fn());
+		new Notice(t().notices.languageChanged);
+	}
+
+	/** Historical events for the timeline: the built-in list follows the interface language */
+	events(): string {
+		return isDefaultEvents(this.settings.events) ? t().defaultEvents : this.settings.events;
 	}
 
 	/** Subscribe to vault changes that affect the tree; returns an unsubscribe function */
@@ -260,13 +274,13 @@ export default class FamilyTreePlugin extends Plugin {
 		this.settings.me = id;
 		this.settings.showLabels = true;
 		await this.saveSettings();
-		new Notice(`Relationships are now shown relative to ${this.graph().persons.get(id)?.name}`);
+		new Notice(t().notices.relativeTo(this.graph().persons.get(id)?.name ?? ""));
 	}
 
 	/** Relationship badges for `visible` people, relative to `ref` */
 	labelExtras(ref: string | undefined, visible: Set<string>): RenderExtras {
 		if (!ref) return {};
-		const k = new Kinship(this.graph(), ref, this.settings.labelLanguage, this.settings.inferSpouseParent);
+		const k = new Kinship(this.graph(), ref, resolveLang(this.settings.labelLanguage), this.settings.inferSpouseParent);
 		const labels = new Map<string, string>();
 		for (const id of visible) {
 			const kin = k.get(id);
@@ -290,20 +304,20 @@ export default class FamilyTreePlugin extends Plugin {
 			onContextMenu: (p, e) => {
 				const menu = new Menu();
 				if (p.ghost) {
-					menu.addItem((i) => i.setTitle("Create note").setIcon("file-plus").onClick(() => this.createPerson(p)));
+					menu.addItem((i) => i.setTitle(t().menu.createNote).setIcon("file-plus").onClick(() => this.createPerson(p)));
 				} else {
-					menu.addItem((i) => i.setTitle("Open").setIcon("file-text").onClick(() => this.app.workspace.openLinkText(p.path!, "", false)));
-					menu.addItem((i) => i.setTitle("Open in new tab").setIcon("file-plus-2").onClick(() => this.app.workspace.openLinkText(p.path!, "", "tab")));
+					menu.addItem((i) => i.setTitle(t().menu.open).setIcon("file-text").onClick(() => this.app.workspace.openLinkText(p.path!, "", false)));
+					menu.addItem((i) => i.setTitle(t().menu.openInNewTab).setIcon("file-plus-2").onClick(() => this.app.workspace.openLinkText(p.path!, "", "tab")));
 				}
 				menu.addSeparator();
-				menu.addItem((i) => i.setTitle("Focus on this person").setIcon("user").onClick(() => withView((v) => v.focusOn(p.id))));
+				menu.addItem((i) => i.setTitle(t().menu.focus).setIcon("user").onClick(() => withView((v) => v.focusOn(p.id))));
 				menu.addItem((i) =>
-					i.setTitle("Show relationships to this person").setIcon("tags").onClick(() => withView((v) => v.setReference(p.id)))
+					i.setTitle(t().menu.showRelationships).setIcon("tags").onClick(() => withView((v) => v.setReference(p.id)))
 				);
 				if (!p.ghost) {
 					menu.addItem((i) =>
 						i
-							.setTitle(p.id === this.settings.me ? "This is me ✓" : "This is me")
+							.setTitle(p.id === this.settings.me ? t().menu.thisIsMeChecked : t().menu.thisIsMe)
 							.setIcon("user-check")
 							.onClick(() => this.setMe(p.id))
 					);
@@ -404,25 +418,18 @@ export default class FamilyTreePlugin extends Plugin {
 			"",
 			`# ${p.fullName}`,
 			"",
-			"## Foto",
-			"",
-			"## Biography",
-			"",
-			"## Interesting facts",
-			"",
-			"## Other family",
-			"",
+			...t().newPerson.headings.flatMap((h) => [`## ${h}`, ""]),
 		].join("\n");
 
 		const name = (p.linktext ?? p.fullName).replace(/[\\/:*?"<>|]/g, "");
 		const folder = await newNoteFolder(this.app, this.settings.newPersonFolder);
 		const path = normalizePath(folder ? `${folder}/${name}.md` : `${name}.md`);
 		if (this.app.vault.getAbstractFileByPath(path)) {
-			new Notice(`${path} already exists`);
+			new Notice(t().notices.exists(path));
 			return;
 		}
 		const file = await this.app.vault.create(path, fm);
 		await this.app.workspace.getLeaf("tab").openFile(file);
-		new Notice(`Created ${p.fullName}`);
+		new Notice(t().notices.created(p.fullName));
 	}
 }

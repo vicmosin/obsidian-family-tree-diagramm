@@ -10,6 +10,7 @@ test("uncertain markers", () => {
 	assert.deepEqual(extractRelLinks('"[[Rose]] ?"'), [{ link: "Rose", uncertain: true }]);
 	assert.deepEqual(extractRelLinks("maybe [[Son]]"), [{ link: "Son", uncertain: true }]);
 	assert.deepEqual(extractRelLinks("возможно [[Son]]"), [{ link: "Son", uncertain: true }]);
+	assert.deepEqual(extractRelLinks("vermutlich [[Son]]"), [{ link: "Son", uncertain: true }]);
 	assert.deepEqual(extractRelLinks("[[A]] ?, [[B]]"), [
 		{ link: "A", uncertain: true },
 		{ link: "B", uncertain: false },
@@ -28,6 +29,15 @@ test("approximate dates", () => {
 	assert.equal(parseDate("1890s")!.label, "1890s");
 	assert.equal(parseDate("1890–1895")!.label, "~1890");
 	assert.equal(parseDate("Неизвестно")!.year, undefined);
+	// German
+	assert.equal(parseDate("um 1895")!.label, "~1895");
+	assert.equal(parseDate("ca. 1895")!.label, "~1895");
+	assert.equal(parseDate("vor 1945")!.label, "<1945");
+	assert.equal(parseDate("nach 1990")!.label, ">1990");
+	assert.equal(parseDate("1890er")!.label, "1890er");
+	assert.equal(parseDate("1890er Jahre")!.label, "1890er");
+	assert.equal(parseDate("vermutlich 1931")!.label, "~1931");
+	assert.equal(parseDate("1931-11-09")!.label, "1931", "ISO dates are exact in every language");
 });
 
 // A made-up family across 4 generations; "me" = James. English names carry no patronymic, so genders are explicit
@@ -151,4 +161,37 @@ test("data check", () => {
 	assert.ok(msgs.some((m) => m.includes("after A died")), msgs.join("; "));
 	assert.ok(msgs.some((m) => m.includes("was 5 when B")));
 	assert.ok(!msgs.some((m) => m.includes("when C was born")), "approximate dates aren't checked for parent age");
+});
+
+test("German kinship terms", () => {
+	const de = new Kinship(g, "James Baker", "de");
+	const l = (id: string, k: Kinship = de) => k.get(id)?.label;
+	assert.equal(l("James Baker"), "ich");
+	assert.equal(l("Thomas Baker"), "Vater");
+	assert.equal(l("Susan Baker"), "Mutter");
+	assert.equal(l("Arthur Baker"), "Großvater");
+	assert.equal(l("Helen Clark"), "Großmutter");
+	assert.equal(l("Henry Baker"), "Urgroßvater");
+	assert.equal(l("Edward Baker"), "Großonkel");
+	assert.equal(l("Olivia Baker"), "Tante zweiten Grades");
+	assert.equal(l("Peter Cole"), "Cousin zweiten Grades");
+	assert.equal(l("Ellen Baker"), "Tante");
+	assert.equal(l("Oscar Kim"), "Ehemann der Tante");
+	assert.equal(l("Mary Baker"), "Schwester");
+	assert.equal(l("Emma Baker"), "Ehefrau");
+	assert.equal(l("Robert White"), "Schwiegervater");
+	assert.equal(l("Rose's child"), "Halbgeschwister ?", "gender unknown: the neutral word");
+
+	assert.equal(l("James Baker", new Kinship(g, "Olivia Baker", "de")), "Neffe zweiten Grades");
+	const fromEdward = new Kinship(g, "Edward Baker", "de");
+	assert.equal(l("James Baker", fromEdward), "Großneffe");
+	assert.equal(l("Thomas Baker", fromEdward), "Neffe");
+	const fromEmma = new Kinship(g, "Emma Baker", "de");
+	assert.equal(l("Thomas Baker", fromEmma), "Schwiegervater");
+	assert.equal(l("Mary Baker", fromEmma), "Schwägerin");
+	assert.equal(l("Thomas Baker", new Kinship(g, "Oscar Kim", "de")), "Schwager");
+	const fromThomas = new Kinship(g, "Thomas Baker", "de");
+	assert.equal(l("Emma Baker", fromThomas), "Schwiegertochter");
+	assert.equal(l("Robert White", fromThomas), "Gegenschwiegervater");
+	assert.equal(l("Helen Clark", fromThomas), "Schwiegermutter");
 });

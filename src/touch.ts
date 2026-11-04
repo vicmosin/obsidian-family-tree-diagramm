@@ -10,12 +10,15 @@ import type { Component } from "obsidian";
  * is not called, so native scrolling (timeline) still works. Same fix as the Map View plugin:
  * https://github.com/Leaflet/Leaflet/discussions/8972
  */
-export function keepTouchesInside(owner: Component, el: HTMLElement) {
+export function keepTouchesInside(owner: Component, el: HTMLElement | (() => HTMLElement | undefined)) {
+	// A function returns the current element when the caller recreates it (the view does on language change)
+	const current = typeof el === "function" ? el : () => el;
 	owner.registerDomEvent(
-		el.ownerDocument,
+		current()?.ownerDocument ?? activeDocument,
 		"touchmove",
 		(e) => {
-			if (e.target instanceof Node && el.contains(e.target)) e.stopPropagation();
+			const target = current();
+			if (target && e.target instanceof Node && target.contains(e.target)) e.stopPropagation();
 		},
 		{ passive: true }
 	);

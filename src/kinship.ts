@@ -1,6 +1,8 @@
 import { FamilyGraph, Gender } from "./model";
 
-export type Lang = "ru" | "en";
+import type { Lang } from "./i18n";
+
+export type { Lang };
 
 export interface Kin {
 	/** e.g. "двоюродная тётя", "first cousin once removed" */
@@ -28,7 +30,7 @@ export class Kinship {
 	constructor(
 		private g: FamilyGraph,
 		readonly me: string,
-		private lang: Lang = "ru",
+		private lang: Lang = "en",
 		/** Same rule as the diagram: one listed parent with exactly one spouse → the spouse is the other parent */
 		private inferSpouseParent = true
 	) {
@@ -136,7 +138,7 @@ export class Kinship {
 	private compute(to: string): Kin | undefined {
 		const g = this.g;
 		const me = this.me;
-		const T = this.lang === "ru" ? RU : EN;
+		const T = TERMS[this.lang];
 		const gTo = this.gender(to);
 		const done = (label: string, path: string[]): Kin => {
 			const uncertain = this.pathUncertain(path);
@@ -379,3 +381,99 @@ const EN: Terms = {
 		return `${enNoun("spouse", spouseGender)}'s ${enBlood(r, gender)}`;
 	},
 };
+
+// German. Relatives one or more generations away and cousins are ranked by degree ("zweiten
+// Grades"), the counterpart of Russian двоюродный/троюродный; older generations get Groß-/Ur-.
+type DeForms = { m: [string, string]; f: [string, string]; n?: string };
+/** [nominative, genitive noun]; the article (des/der) is added from the gender */
+const de = (m: [string, string], f: [string, string], n?: string): DeForms => ({ m, f, n });
+const DE_NOUNS: Record<NounKey, DeForms> = {
+	parent: de(["Vater", "Vaters"], ["Mutter", "Mutter"], "Elternteil"),
+	child: de(["Sohn", "Sohnes"], ["Tochter", "Tochter"], "Kind"),
+	grandparent: de(["Großvater", "Großvaters"], ["Großmutter", "Großmutter"], "Großelternteil"),
+	grandchild: de(["Enkel", "Enkels"], ["Enkelin", "Enkelin"], "Enkelkind"),
+	sibling: de(["Bruder", "Bruders"], ["Schwester", "Schwester"], "Geschwister"),
+	uncle: de(["Onkel", "Onkels"], ["Tante", "Tante"]),
+	nephew: de(["Neffe", "Neffen"], ["Nichte", "Nichte"]),
+	spouse: de(["Ehemann", "Ehemanns"], ["Ehefrau", "Ehefrau"], "Ehepartner"),
+	stepParent: de(["Stiefvater", "Stiefvaters"], ["Stiefmutter", "Stiefmutter"], "Stiefelternteil"),
+	stepChild: de(["Stiefsohn", "Stiefsohnes"], ["Stieftochter", "Stieftochter"], "Stiefkind"),
+	childInLaw: de(["Schwiegersohn", "Schwiegersohnes"], ["Schwiegertochter", "Schwiegertochter"], "Schwiegerkind"),
+	siblingInLaw: de(["Schwager", "Schwagers"], ["Schwägerin", "Schwägerin"]),
+	wifesParent: de(["Schwiegervater", "Schwiegervaters"], ["Schwiegermutter", "Schwiegermutter"], "Schwiegerelternteil"),
+	husbandsParent: de(["Schwiegervater", "Schwiegervaters"], ["Schwiegermutter", "Schwiegermutter"], "Schwiegerelternteil"),
+	wifesSibling: de(["Schwager", "Schwagers"], ["Schwägerin", "Schwägerin"]),
+	husbandsSibling: de(["Schwager", "Schwagers"], ["Schwägerin", "Schwägerin"]),
+	wifesSistersHusband: de(["Schwippschwager", "Schwippschwagers"], ["Schwippschwägerin", "Schwippschwägerin"]),
+	coParentInLaw: de(["Gegenschwiegervater", "Gegenschwiegervaters"], ["Gegenschwiegermutter", "Gegenschwiegermutter"]),
+	inLaw: de(["Verschwägerter", "Verschwägerten"], ["Verschwägerte", "Verschwägerten"]),
+};
+const DE_ORDINAL = ["", "", "zweiten", "dritten", "vierten", "fünften", "sechsten", "siebten", "achten"];
+
+interface DeTerm {
+	noun: NounKey;
+	/** Same generation but not a sibling: Cousin/Cousine */
+	cousin: boolean;
+	/** Steps up from the base word: Großvater → Urgroßvater, Onkel → Großonkel → Urgroßonkel */
+	ur: number;
+	/** 1 = none; 2 = "zweiten Grades" */
+	degree: number;
+}
+
+function deTerm(b: Blood): DeTerm {
+	const { up, down } = b;
+	const t = (noun: NounKey, ur = 0, degree = 1, cousin = false): DeTerm => ({ noun, ur, degree, cousin });
+	if (up === 0) return down === 1 ? t("child") : t("grandchild", down - 2);
+	if (down === 0) return up === 1 ? t("parent") : t("grandparent", up - 2);
+	if (up === 1 && down === 1) return t("sibling");
+	const d = up - down;
+	if (d > 0) return t("uncle", d - 1, down);
+	if (d < 0) return t("nephew", -d - 1, up);
+	return t("sibling", 0, up - 1, true);
+}
+
+/** Großvater → Urgroßvater → Ururgroßvater; Onkel → Großonkel → Urgroßonkel */
+function dePrefix(word: string, term: DeTerm): string {
+	if (!term.ur) return word;
+	const lower = word.charAt(0).toLowerCase() + word.slice(1);
+	if (term.noun === "uncle" || term.noun === "nephew") return term.ur === 1 ? "Groß" + lower : "Ur" + "ur".repeat(term.ur - 2) + "groß" + lower;
+	return "Ur" + "ur".repeat(term.ur - 1) + lower;
+}
+
+/** gcase 0 = nominative ("Cousine zweiten Grades"), 1 = genitive with article ("der Cousine zweiten Grades") */
+function deRender(term: DeTerm, gcase: 0 | 1, gender: Gender, half = false): string {
+	const forms = DE_NOUNS[term.noun];
+	const word = (g: "m" | "f") => {
+		let [nom, gen] = term.cousin ? (g === "m" ? ["Cousin", "Cousins"] : ["Cousine", "Cousine"]) : forms[g];
+		if (half) [nom, gen] = ["Halb" + nom.toLowerCase(), "Halb" + gen.toLowerCase()];
+		const w = dePrefix(gcase ? gen : nom, term);
+		return gcase ? `${g === "m" ? "des" : "der"} ${w}` : w;
+	};
+	let out: string;
+	if (gender) out = word(gender);
+	else if (!gcase && forms.n && !term.cousin) out = dePrefix(half ? "Halb" + forms.n.toLowerCase() : forms.n, term);
+	else out = `${word("m")}/${word("f")}`;
+	const ordinal = term.degree >= 2 ? (DE_ORDINAL[term.degree] ?? `${term.degree}.`) : "";
+	return ordinal ? `${out} ${ordinal} Grades` : out;
+}
+
+const DE: Terms = {
+	me: "ich",
+	noun: (key, gender) => (gender ? DE_NOUNS[key][gender][0] : DE_NOUNS[key].n ?? `${DE_NOUNS[key].m[0]}/${DE_NOUNS[key].f[0]}`),
+	blood: (b, gender) => deRender(deTerm(b), 0, gender, !!b.halfVia),
+	spouseOfRelative(r, relGender, gender) {
+		if (r.up === 1 && r.down === 0) return DE.noun("stepParent", gender);
+		if (r.up === 0 && r.down === 1) return DE.noun("childInLaw", gender);
+		if (r.up === 1 && r.down === 1) return DE.noun("siblingInLaw", gender);
+		return `${DE.noun("spouse", gender)} ${deRender(deTerm(r), 1, relGender)}`;
+	},
+	relativeOfSpouse(r, gender, spouseGender) {
+		if (r.up === 1 && r.down === 0) return DE.noun("wifesParent", gender);
+		if (r.up === 1 && r.down === 1) return DE.noun("wifesSibling", gender);
+		if (r.up === 0 && r.down === 1) return DE.noun("stepChild", gender);
+		const spouse = spouseGender === "f" ? "der Ehefrau" : spouseGender === "m" ? "des Ehemanns" : "des Ehepartners";
+		return `${deRender(deTerm(r), 0, gender)} ${spouse}`;
+	},
+};
+
+const TERMS: Record<Lang, Terms> = { en: EN, ru: RU, de: DE };
