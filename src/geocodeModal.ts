@@ -1,3 +1,4 @@
+import { lang, t } from "./i18n";
 import { Modal, Notice, requestUrl } from "obsidian";
 import type FamilyTreePlugin from "./main";
 import { Coords, Place } from "./places";
@@ -25,7 +26,7 @@ export class GeocodeModal extends Modal {
 	}
 
 	onOpen() {
-		this.titleEl.setText("Find coordinates for places");
+		this.titleEl.setText(t().geocode.title);
 		this.render();
 	}
 
@@ -40,9 +41,7 @@ export class GeocodeModal extends Modal {
 		contentEl.addClass("ft-geo");
 		contentEl.createEl("p", {
 			cls: "ft-check-hint",
-			text:
-				"Place names (not people) are sent to OpenStreetMap's search. Check each match before saving — old or renamed places can be found in the wrong country. " +
-				"Coordinates are saved as `location: [lat, lng]` in each place's note. Places without a note get one.",
+			text: t().geocode.hint,
 		});
 
 		const table = contentEl.createEl("table", { cls: "ft-geo-table" });
@@ -57,22 +56,22 @@ export class GeocodeModal extends Modal {
 			if (c.status === "found") {
 				result.createSpan({ text: c.label ?? "" });
 				const link = result.createEl("a", {
-					text: " View on map ↗",
+					text: t().geocode.viewOnMap,
 					href: `https://www.openstreetmap.org/?mlat=${c.coords![0]}&mlon=${c.coords![1]}#map=10/${c.coords![0]}/${c.coords![1]}`,
 				});
 				link.setAttr("target", "_blank");
 			} else {
 				result.setText(
-					{ waiting: "", searching: "searching…", "not-found": "not found — add `location: [lat, lng]` to the place note by hand", error: "network error" }[c.status]
+					{ waiting: "", searching: t().geocode.searching, "not-found": t().geocode.notFound, error: t().geocode.networkError }[c.status]
 				);
 			}
 		}
 
 		const buttons = contentEl.createDiv("ft-check-actions");
-		const search = buttons.createEl("button", { text: this.running ? "Searching…" : "Search", cls: this.anyFound() ? "" : "mod-cta" });
+		const search = buttons.createEl("button", { text: this.running ? t().geocode.searchingButton : t().geocode.search, cls: this.anyFound() ? "" : "mod-cta" });
 		search.disabled = this.running;
 		search.onclick = () => this.search();
-		const save = buttons.createEl("button", { text: "Save selected", cls: this.anyFound() ? "mod-cta" : "" });
+		const save = buttons.createEl("button", { text: t().geocode.save, cls: this.anyFound() ? "mod-cta" : "" });
 		save.disabled = this.running || !this.candidates.some((c) => c.accept);
 		save.onclick = () => this.save();
 	}
@@ -90,7 +89,7 @@ export class GeocodeModal extends Modal {
 			this.render();
 			try {
 				const url =
-					"https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=ru,en&q=" + encodeURIComponent(c.place.name);
+					`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=${lang()},en&q=` + encodeURIComponent(c.place.name);
 				const res = await requestUrl({ url, headers: { "User-Agent": "Obsidian-Family-Tree-Diagram/0.1 (personal genealogy notes)" } });
 				const hit = (res.json as { lat: string; lon: string; display_name: string }[])[0];
 				if (hit) {
@@ -117,7 +116,7 @@ export class GeocodeModal extends Modal {
 			if ((await this.plugin.savePlaceCoords(c.place, c.coords)) === "created") created++;
 			else updated++;
 		}
-		new Notice(`Saved coordinates: ${updated} place note${updated === 1 ? "" : "s"} updated, ${created} created`);
+		new Notice(t().notices.savedCoords(updated, created));
 		this.close();
 	}
 }

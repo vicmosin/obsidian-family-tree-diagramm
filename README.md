@@ -45,9 +45,17 @@ Dates may be approximate: `около 1895` / `1895?` → **~1895**, `до 1941`
 
 Two people who share a child but aren't `married_to` each other are joined by a dashed line.
 
+## Languages
+
+The plugin speaks **English, German and Russian**: menus, settings, messages, the data check and the built-in historical events. It follows Obsidian's own language (Settings → General → Language) and falls back to English for other languages. To choose another, use Settings → Family Tree Diagram → Language. Command names switch after Obsidian restarts.
+
+Relationship labels have their own language setting, so a German interface can show Russian kinship terms and vice versa.
+
+Notes can be written in any of the three languages. Approximate dates (`около 1895`, `um 1895`, `about 1895`, `1890-е`, `1890er`, `1890s`, `до/vor/before 1945`), uncertainty words (`возможно`, `vermutlich`, `maybe`, `?`) and gender values (`м/ж`, `m/w`, `m/f`) are understood in all of them.
+
 ## Relationship labels
 
-Right-click your own card → **This is me** (or Settings → Me, or the command *Set current note as me*). Every card then shows how that person is related to you — отец, двоюродная тётя, троюродный брат, внучатый племянник, тесть, свекровь, золовка, сват, муж тёти… (Russian or English, see settings).
+Right-click your own card → **This is me** (or Settings → Me, or the command *Set current note as me*). Every card then shows how that person is related to you, in English (father, first cousin once removed, great-uncle, sister-in-law…), German (Vater, Cousine zweiten Grades, Großonkel, Schwägerin, Schwippschwager…) or Russian (отец, двоюродная тётя, троюродный брат, внучатый племянник, тесть, свекровь, золовка, сват…).
 
 - Hover any card to highlight the chain of people connecting it to you.
 - Right-click → **Show relationships to this person** to see the tree from someone else's point of view (✕ in the toolbar to go back).
@@ -63,7 +71,7 @@ The calendar button in the toolbar (or the command **Open family timeline**) swi
 - Each person is a bar from birth to death. Approximate dates fade out, people still alive end in an arrow at today, and someone with no death date who'd be over 105 gets a faded end.
 - Circles on a bar are that person's children being born (hover for name and the parent's age).
 - Move the mouse over the chart: a cursor shows the year and **everyone's age at that moment**.
-- Historical events are shaded bands; edit them in Settings → Timeline (one per line, `1941-1945 Великая Отечественная война`).
+- Historical events are shaded bands; edit them in Settings → Timeline (one per line, `1939-1945 World War II`). The built-in list matches the interface language until you change it.
 - **By family** orders rows like the tree (generation by generation, couples together); **By birth** sorts by birth year.
 - Focus mode, search, relationship labels and the right-click menu work the same as in the tree. People without any dates are listed under the chart.
 - Embed: ```` ```family-timeline ```` with the same options as `family-tree` (`root`, `depth`, `height`, `labels`) plus `order: birth`.

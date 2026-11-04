@@ -15,8 +15,8 @@ export interface PlaceMention {
 	to?: number;
 }
 
-const NEAR = /рядом|около|возле|под\s|недалеко|near|close to|around/i;
-const UNKNOWN = /^(неизвестно|не известно|unknown|\?|-|—)$/i;
+const NEAR = /рядом|около|возле|под\s|недалеко|near|close to|around|(?:^|\s)bei\s|nahe|in der nähe|unweit/i;
+const UNKNOWN = /^(неизвестно|не известно|unknown|unbekannt|\?|-|—)$/i;
 
 /**
  * Places in a property value. When a value contains links, only the links count and the

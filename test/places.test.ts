@@ -17,6 +17,8 @@ test("parsePlaces: links win over surrounding text", () => {
 	assert.deepEqual(parsePlaces("York"), [{ name: "York", isLink: false, uncertain: false }]);
 	assert.deepEqual(parsePlaces("Неизвестно"), []);
 	assert.deepEqual(parsePlaces("Unknown"), []);
+	assert.deepEqual(parsePlaces("unbekannt"), []);
+	assert.deepEqual(parsePlaces("vermutlich bei [[München]]"), [{ name: "München", isLink: true, uncertain: true }]);
 	assert.deepEqual(parsePlaces(["[[Manchester]] 1950-1975", "Toronto 1991"]), [
 		{ name: "Manchester", isLink: true, uncertain: false, from: 1950, to: 1975 },
 		{ name: "Toronto", isLink: false, uncertain: false, from: 1991, to: 1991 },

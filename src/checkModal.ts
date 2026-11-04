@@ -1,6 +1,7 @@
+import { t } from "./i18n";
 import { Modal, Notice } from "obsidian";
 import type FamilyTreePlugin from "./main";
-import { findIssues, Issue, ISSUE_TITLES, IssueKind } from "./check";
+import { findIssues, Issue, IssueKind } from "./check";
 
 const ORDER: IssueKind[] = ["one-way", "dates", "structure", "missing-note", "missing-birth"];
 
@@ -17,12 +18,12 @@ export class CheckModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.addClass("ft-check");
-		this.titleEl.setText("Family tree check");
+		this.titleEl.setText(t().check.title);
 
 		const g = this.plugin.graph();
 		const issues = findIssues(g, this.plugin.settings.fields);
 		if (!issues.length) {
-			contentEl.createEl("p", { text: `All good — ${g.persons.size} people, no problems found.` });
+			contentEl.createEl("p", { text: t().check.allGood(g.persons.size) });
 			return;
 		}
 
@@ -36,20 +37,20 @@ export class CheckModal extends Modal {
 			// Long, low-priority lists start collapsed
 			details.open = kind !== "missing-birth" && kind !== "missing-note";
 			const summary = details.createEl("summary");
-			summary.createSpan({ text: ISSUE_TITLES[kind] });
+			summary.createSpan({ text: t().check.section[kind] });
 			summary.createSpan({ cls: "ft-check-count", text: String(list.length) });
 
 			if (kind === "one-way") {
 				const row = details.createDiv("ft-check-actions");
 				row.createSpan({
 					cls: "ft-check-hint",
-					text: "The tree already reads these correctly. Adding the reverse links keeps your notes consistent if you use them elsewhere.",
+					text: t().check.hint,
 				});
-				const btn = row.createEl("button", { cls: "mod-cta", text: `Add ${list.length} missing link${list.length > 1 ? "s" : ""}` });
+				const btn = row.createEl("button", { cls: "mod-cta", text: t().check.addLinks(list.length) });
 				btn.onclick = async () => {
 					btn.disabled = true;
 					const { links, notes } = await this.plugin.applyReverseFixes(list.map((i) => i.fix!));
-					new Notice(`Added ${links} link${links === 1 ? "" : "s"} in ${notes} note${notes === 1 ? "" : "s"}`);
+					new Notice(t().notices.addedLinks(links, notes));
 					// Metadata cache updates asynchronously
 					window.setTimeout(() => this.render(), 600);
 				};

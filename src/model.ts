@@ -168,7 +168,7 @@ function add(rel: Relation, key: string, value: string) {
 
 export const WIKILINK = /\[\[([^\]|#^]+)(?:[#^][^\]|]*)?(?:\|[^\]]*)?\]\]/g;
 const MDLINK = /\[[^\]]*\]\(([^)]+)\)/g;
-export const UNCERTAIN = /\?|возможно|предположительно|вероятно|наверное|не точно|неточно|maybe|possibly|probably|perhaps|unconfirmed|uncertain/i;
+export const UNCERTAIN = /\?|возможно|предположительно|вероятно|наверное|не точно|неточно|maybe|possibly|probably|perhaps|unconfirmed|uncertain|vielleicht|vermutlich|wahrscheinlich|möglicherweise|unsicher|unbestätigt/i;
 
 export interface RelLink {
 	link: string;
@@ -247,8 +247,8 @@ export function parseName(fullName: string): { name: string; altNames?: string }
 export function guessGender(value: unknown, name: string): Gender {
 	if (typeof value === "string") {
 		const v = value.trim().toLowerCase();
-		if (["m", "male", "man", "м", "муж", "мужской", "мужчина"].includes(v)) return "m";
-		if (["f", "female", "woman", "ж", "жен", "женский", "женщина"].includes(v)) return "f";
+		if (["m", "male", "man", "м", "муж", "мужской", "мужчина", "männlich", "mann"].includes(v)) return "m";
+		if (["f", "female", "woman", "ж", "жен", "женский", "женщина", "w", "weiblich", "frau"].includes(v)) return "f";
 	}
 	// Russian / Ukrainian patronymic: "Петрович" / "Ивановна"
 	const words = name.split(/\s+/);
@@ -268,10 +268,10 @@ export function formatDate(value: unknown): string | undefined {
 	return undefined;
 }
 
-const APPROX = /около|ок\.|примерно|приблизительно|~|≈|circa|\bca\.|\bc\.|about|\babt\b|approx|\?|предположительно|возможно|вероятно/i;
+const APPROX = /около|ок\.|примерно|приблизительно|~|≈|circa|\bca\.|\bc\.|about|\babt\b|approx|\?|предположительно|возможно|вероятно|(?:^|[\s(])um(?=\s)|etwa|ungefähr|zirka|vermutlich|wahrscheinlich/i;
 // \b is ASCII-only in JS, so Cyrillic words are delimited by hand
-const BEFORE = /(?:^|[\s(])до(?=[\s\d])|не позднее|before|\bbef\b|</i;
-const AFTER = /после|не ранее|after|\baft\b|>/i;
+const BEFORE = /(?:^|[\s(])до(?=[\s\d])|не позднее|before|\bbef\b|(?:^|[\s(])vor(?=[\s\d])|spätestens|</i;
+const AFTER = /после|не ранее|after|\baft\b|(?:^|[\s(])nach(?=[\s\d])|frühestens|>/i;
 
 export function parseDate(value?: string): DateInfo | undefined {
 	if (!value) return undefined;
@@ -279,11 +279,12 @@ export function parseDate(value?: string): DateInfo | undefined {
 	if (!text) return undefined;
 	// No lookbehind: it fails to parse on iOS before 16.4
 	const years = [...text.matchAll(/(?:^|\D)(\d{4})(?!\d)/g)].map((m) => Number(m[1]));
-	const decade = text.match(/(?:^|\D)(\d{3}0)\s*-?\s*(ые|е|х|s)(?![a-zа-я])/i);
+	const decade = text.match(/(?:^|\D)(\d{3}0)\s*-?\s*(ые|е|х|er|s)(?![a-zа-я])/i);
 	if (decade) {
 		const y = Number(decade[1]);
-		const ru = /[а-я]/i.test(decade[2]);
-		return { text, year: y + 5, approx: true, label: ru ? `${y}-е` : `${y}s` };
+		const suffix = decade[2].toLowerCase();
+		const label = /[а-я]/.test(suffix) ? `${y}-е` : suffix === "er" ? `${y}er` : `${y}s`;
+		return { text, year: y + 5, approx: true, label };
 	}
 	if (!years.length) return { text, approx: true };
 	const year = years[0];

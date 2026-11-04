@@ -1,8 +1,8 @@
 import { App, PluginSettingTab, requireApiVersion, Setting } from "obsidian";
 import type { SettingDefinition, SettingDefinitionGroup, SettingDefinitionItem } from "obsidian";
 import type FamilyTreePlugin from "./main";
-import { Lang } from "./kinship";
-import { DEFAULT_EVENTS_RU } from "./timeline";
+import en from "./i18n/en";
+import { LANGUAGES, LangSetting, t } from "./i18n";
 import { Coords } from "./places";
 import { DEFAULT_FIELDS, FieldNames } from "./model";
 
@@ -18,9 +18,14 @@ export interface FamilyTreeSettings {
 	newPersonFolder: string;
 	/** Path of the note that represents the vault owner; relationship labels are relative to it */
 	me: string;
-	labelLanguage: Lang;
+	/** Language of menus, settings and messages; "auto" follows Obsidian */
+	language: LangSetting;
+	labelLanguage: LangSetting;
 	showLabels: boolean;
-	/** Historical events on the timeline, one per line: "1941-1945 Великая Отечественная война" */
+	/**
+	 * Historical events on the timeline, one per line: "1939-1945 World War II". While it equals a
+	 * built-in list, the list of the current interface language is shown instead.
+	 */
 	events: string;
 	/** Folder for new place notes; empty = Obsidian's default location for new notes */
 	placeFolder: string;
@@ -37,9 +42,10 @@ export const DEFAULT_SETTINGS: FamilyTreeSettings = {
 	defaultDepth: 3,
 	newPersonFolder: "",
 	me: "",
-	labelLanguage: "ru",
+	language: "auto",
+	labelLanguage: "auto",
 	showLabels: true,
-	events: DEFAULT_EVENTS_RU,
+	events: en.defaultEvents,
 	placeFolder: "",
 	placeCache: {},
 };
@@ -53,131 +59,98 @@ type Group = SettingDefinitionGroup;
  * classic Setting API.
  */
 export class FamilyTreeSettingTab extends PluginSettingTab {
+	/** Button labels for action rows, used when drawing them with the classic API */
+	private buttonText = new Map<string, string>();
+
 	constructor(app: App, private plugin: FamilyTreePlugin) {
 		super(app, plugin);
 	}
 
 	getSettingDefinitions(): Item[] {
 		const s = this.plugin.settings;
+		const tr = t().settings;
 		const people = [...this.plugin.graph().persons.values()].filter((p) => !p.ghost).sort((a, b) => a.fullName.localeCompare(b.fullName));
-		const field = (key: keyof FieldNames, name: string, desc?: string): SettingDefinition => ({
-			name,
-			desc,
-			control: { type: "text", key: `fields.${key}`, placeholder: DEFAULT_FIELDS[key] },
-		});
+		const languages = { auto: tr.auto, ...LANGUAGES };
+		const field = (key: keyof FieldNames): SettingDefinition => {
+			const [name, desc] = tr.field[key];
+			return { name, desc: desc || undefined, control: { type: "text", key: `fields.${key}`, placeholder: DEFAULT_FIELDS[key] } };
+		};
+		const action = (name: string, desc: string, button: string, run: () => void, visible?: () => boolean): SettingDefinition => {
+			this.buttonText.set(name, button);
+			return { name, desc, action: run, visible };
+		};
 
 		return [
 			{
 				type: "group",
-				heading: "Relationship labels",
+				heading: tr.languageHeading,
+				items: [
+					{ name: tr.interfaceLanguage, desc: tr.interfaceLanguageDesc, control: { type: "dropdown", key: "language", options: languages } },
+					{ name: tr.labelLanguage, control: { type: "dropdown", key: "labelLanguage", options: languages } },
+				],
+			},
+			{
+				type: "group",
+				heading: tr.labelsHeading,
 				items: [
 					{
-						name: "Me",
-						desc: "Labels like “двоюродная тётя” are shown relative to this person. You can also set it from a card's right-click menu.",
+						name: tr.me,
+						desc: tr.meDesc,
 						control: {
 							type: "dropdown",
 							key: "me",
-							options: { "": "— not set —", ...Object.fromEntries(people.map((p) => [p.id, p.fullName])) },
+							options: { "": tr.notSet, ...Object.fromEntries(people.map((p) => [p.id, p.fullName])) },
 						},
 					},
-					{ name: "Language", control: { type: "dropdown", key: "labelLanguage", options: { ru: "Русский", en: "English" } } },
-					{
-						name: "Show labels by default",
-						desc: "Can be toggled in the tree's toolbar. In code blocks use `labels: false` to hide them.",
-						control: { type: "toggle", key: "showLabels" },
-					},
+					{ name: tr.showLabels, desc: tr.showLabelsDesc, control: { type: "toggle", key: "showLabels" } },
 				],
 			},
 			{
 				type: "group",
-				heading: "Timeline",
+				heading: tr.timelineHeading,
 				items: [
-					{
-						name: "Historical events",
-						desc: "Shown as bands on the timeline. One per line: a year or range, then a label, e.g. “1941-1945 Великая Отечественная война”.",
-						control: { type: "textarea", key: "events", rows: 8 },
-					},
-					{
-						name: "Restore default events",
-						desc: "Replace the list above with the built-in one.",
-						action: () => void this.change(() => (s.events = DEFAULT_EVENTS_RU)),
-					},
+					{ name: tr.events, desc: tr.eventsDesc, control: { type: "textarea", key: "events", rows: 8 } },
+					action(tr.restoreEvents, tr.restoreEventsDesc, tr.restoreButton, () => void this.change(() => (s.events = t().defaultEvents))),
 				],
 			},
 			{
 				type: "group",
-				heading: "Map",
+				heading: tr.mapHeading,
 				items: [
-					{
-						name: "Find coordinates",
-						desc: "Look up places on OpenStreetMap and save `location: [lat, lng]` into each place's note. Places without a note get one.",
-						action: () => this.plugin.openGeocode(),
-					},
-					{
-						name: "Folder for place notes",
-						desc: "Where new place notes are created. Existing place notes are found in any folder. Empty = Obsidian's default location for new notes.",
-						control: { type: "text", key: "placeFolder" },
-					},
-					{
-						name: "Move remembered coordinates into notes",
-						desc: `${Object.keys(s.placeCache).length} places found by an earlier version are stored in plugin data, which is lost if the plugin is removed. This creates a note for each.`,
-						visible: () => Object.keys(s.placeCache).length > 0,
-						action: () => void this.plugin.migratePlaceCache().then(() => this.refresh()),
-					},
+					action(tr.findCoordinates, tr.findCoordinatesDesc, tr.findButton, () => this.plugin.openGeocode()),
+					{ name: tr.placeFolder, desc: tr.placeFolderDesc, control: { type: "text", key: "placeFolder" } },
+					action(
+						tr.movePlaces,
+						tr.movePlacesDesc(Object.keys(s.placeCache).length),
+						tr.moveButton,
+						() => void this.plugin.migratePlaceCache().then(() => this.refresh()),
+						() => Object.keys(s.placeCache).length > 0
+					),
 				],
 			},
 			{
 				type: "group",
-				heading: "Which notes are people",
+				heading: tr.peopleHeading,
 				items: [
-					{ name: "Type value", desc: "Notes with this value in the `type` property are people.", control: { type: "text", key: "typeValue" } },
-					{
-						name: "Tag",
-						desc: "Notes with this tag (without #) are people too. Notes linked from people are always included.",
-						control: { type: "text", key: "tag" },
-					},
+					{ name: tr.typeValue, desc: tr.typeValueDesc, control: { type: "text", key: "typeValue" } },
+					{ name: tr.tag, desc: tr.tagDesc, control: { type: "text", key: "tag" } },
 				],
 			},
 			{
 				type: "group",
-				heading: "Property names",
+				heading: tr.propertiesHeading,
 				items: [
-					field("parentOf", "Parent of", "Links to this person's children"),
-					field("childOf", "Child of", "Links to this person's parents"),
-					field("marriedTo", "Married to"),
-					field("siblings", "Siblings"),
-					field("birthDate", "Birth date"),
-					field("deathDate", "Death date"),
-					field("birthPlace", "Birth place"),
-					field("deathPlace", "Death place"),
-					field("livedIn", "Lived in", "Optional list of places, each may carry years: “[[Manchester]] 1950-1975”"),
-					field("gender", "Gender", "Optional: m/f. Without it gender is guessed from the patronymic (…вич / …вна)."),
-					{
-						name: "Photo",
-						desc: "Optional property with an image link. Without it the first image embedded in the note is used.",
-						control: { type: "text", key: "photoField" },
-					},
+					...(["parentOf", "childOf", "marriedTo", "siblings", "birthDate", "deathDate", "birthPlace", "deathPlace", "livedIn", "gender"] as const).map(field),
+					{ name: tr.photo, desc: tr.photoDesc, control: { type: "text", key: "photoField" } },
 				],
 			},
 			{
 				type: "group",
-				heading: "Diagram",
+				heading: tr.diagramHeading,
 				items: [
-					{
-						name: "Infer second parent from spouse",
-						desc: "If a child lists only one parent and that parent has exactly one spouse, draw the child under the couple.",
-						control: { type: "toggle", key: "inferSpouseParent" },
-					},
-					{
-						name: "Default focus depth",
-						desc: "Generations up and down shown in focus mode.",
-						control: { type: "slider", key: "defaultDepth", min: 1, max: 8, step: 1 },
-					},
-					{
-						name: "Folder for new people",
-						desc: "Where notes are created when you click a person that has no note yet. Empty = Obsidian's default location for new notes.",
-						control: { type: "text", key: "newPersonFolder" },
-					},
+					{ name: tr.inferParent, desc: tr.inferParentDesc, control: { type: "toggle", key: "inferSpouseParent" } },
+					{ name: tr.depth, desc: tr.depthDesc, control: { type: "slider", key: "defaultDepth", min: 1, max: 8, step: 1 } },
+					{ name: tr.personFolder, desc: tr.personFolderDesc, control: { type: "text", key: "newPersonFolder" } },
 				],
 			},
 		];
@@ -187,6 +160,7 @@ export class FamilyTreeSettingTab extends PluginSettingTab {
 	getControlValue(key: string): unknown {
 		const s = this.plugin.settings;
 		if (key.startsWith("fields.")) return s.fields[key.slice(7) as keyof FieldNames];
+		if (key === "events") return this.plugin.events();
 		return s[key as keyof FamilyTreeSettings];
 	}
 
@@ -198,7 +172,15 @@ export class FamilyTreeSettingTab extends PluginSettingTab {
 			s.fields[field] = text || DEFAULT_FIELDS[field];
 		} else if (key === "tag") s.tag = text.replace(/^#/, "").trim();
 		else if (key === "typeValue" || key === "photoField" || key === "newPersonFolder" || key === "placeFolder" || key === "me") s[key] = text;
-		else if (key === "labelLanguage") s.labelLanguage = value === "en" ? "en" : "ru";
+		else if (key === "language" || key === "labelLanguage") {
+			s[key] = value === "en" || value === "de" || value === "ru" ? value : "auto";
+			if (key === "language") {
+				await this.plugin.saveSettings();
+				this.plugin.applyLanguage();
+				this.refresh();
+				return;
+			}
+		}
 		else if (key === "events" && typeof value === "string") s.events = value;
 		else if ((key === "showLabels" || key === "inferSpouseParent") && typeof value === "boolean") s[key] = value;
 		else if (key === "defaultDepth" && typeof value === "number") s.defaultDepth = value;
@@ -218,7 +200,7 @@ export class FamilyTreeSettingTab extends PluginSettingTab {
 	}
 
 	/** Redraws after a change that alters other rows */
-	private refresh() {
+	refresh() {
 		const tab = this as unknown as { update?: () => void };
 		if (requireApiVersion("1.13.0") && typeof tab.update === "function") tab.update();
 		else this.renderLegacy();
@@ -244,8 +226,7 @@ export class FamilyTreeSettingTab extends PluginSettingTab {
 		if (def.desc) setting.setDesc(def.desc);
 		if ("action" in def && def.action) {
 			const action = def.action;
-			// Button text is the first word of the name: "Find", "Forget", "Restore"
-			setting.addButton((b) => b.setButtonText(def.name.split(" ")[0]).onClick(() => action(b.buttonEl, 0)));
+			setting.addButton((b) => b.setButtonText(this.buttonText.get(def.name) ?? def.name).onClick(() => action(b.buttonEl, 0)));
 			return;
 		}
 		if (!("control" in def) || !def.control) return;

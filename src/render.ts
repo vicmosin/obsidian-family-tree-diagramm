@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { Layout, LayoutNode } from "./layout";
 import { Person, stripLinks } from "./model";
 
@@ -250,7 +251,7 @@ export class TreeRenderer {
 			}
 			if (u.kind !== "single" && (kids.length || u.kind === "couple")) {
 				const c = el("circle", { cx: u.x, cy: u.y, r: u.kind === "virtual" ? 5 : 3.5, class: "ft-joint" + (u.kind === "virtual" ? " is-virtual" : "") });
-				if (u.kind === "virtual") c.appendChild(title("Siblings — parents unknown"));
+				if (u.kind === "virtual") c.appendChild(title(t().tree.siblingsUnknownParents));
 				joints.appendChild(c);
 			}
 		}
@@ -304,7 +305,7 @@ export class TreeRenderer {
 		const dates = lifespan(p);
 		if (dates || p.ghost) {
 			const d = html("div", "ft-dates");
-			d.textContent = p.ghost ? "no note yet" : dates!;
+			d.textContent = p.ghost ? t().tree.noNote : dates!;
 			text.appendChild(d);
 		}
 		box.appendChild(text);
@@ -378,7 +379,7 @@ function tooltip(p: Person, label?: string): string {
 	const lines = [label ? `${p.fullName} — ${label}` : p.fullName];
 	if (p.birth || p.birthPlace) lines.push(`* ${[p.birth, stripLinks(p.birthPlace)].filter(Boolean).join(", ")}`);
 	if (p.death || p.deathPlace) lines.push(`† ${[p.death, stripLinks(p.deathPlace)].filter(Boolean).join(", ")}`);
-	lines.push(p.ghost ? "Click to create a note" : "Click to open · Ctrl/Cmd+click: new tab · Right-click: more");
+	lines.push(p.ghost ? t().tree.tipGhost : t().tree.tipPerson);
 	return lines.join("\n");
 }
 

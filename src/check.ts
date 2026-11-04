@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { FamilyGraph, FieldNames, RelationField, REVERSE_FIELD } from "./model";
 
 export type IssueKind = "one-way" | "missing-note" | "dates" | "structure" | "missing-birth";
@@ -17,16 +18,9 @@ export interface Issue {
 	fix?: ReverseFix;
 }
 
-export const ISSUE_TITLES: Record<IssueKind, string> = {
-	"one-way": "Links written on one side only",
-	"missing-note": "People without a note",
-	dates: "Suspicious dates",
-	structure: "Structure problems",
-	"missing-birth": "No birth date",
-};
-
 export function findIssues(g: FamilyGraph, fields: FieldNames, thisYear = new Date().getFullYear()): Issue[] {
 	const issues: Issue[] = [];
+	const m = t().check;
 	const name = (id: string) => g.persons.get(id)?.name ?? id;
 	const isGhost = (id: string) => g.persons.get(id)?.ghost ?? true;
 
@@ -42,7 +36,7 @@ export function findIssues(g: FamilyGraph, fields: FieldNames, thisYear = new Da
 		issues.push({
 			kind: "one-way",
 			person: d.to,
-			message: `${fields[rev]} should include ${name(d.from)} (stated in ${name(d.from)}'s ${fields[d.field]})`,
+			message: m.oneWay(fields[rev], name(d.from), fields[d.field]),
 			fix: { person: d.to, field: rev, target: d.from, uncertain: d.uncertain },
 		});
 	}
@@ -51,7 +45,7 @@ export function findIssues(g: FamilyGraph, fields: FieldNames, thisYear = new Da
 	for (const p of g.persons.values()) {
 		if (!p.ghost) continue;
 		const by = [...new Set(g.declarations.filter((d) => d.to === p.id).map((d) => name(d.from)))];
-		issues.push({ kind: "missing-note", person: p.id, message: `mentioned by ${by.join(", ")}` });
+		issues.push({ kind: "missing-note", person: p.id, message: m.mentionedBy(by.join(", ")) });
 	}
 
 	// Dates
@@ -60,13 +54,13 @@ export function findIssues(g: FamilyGraph, fields: FieldNames, thisYear = new Da
 		const b = p.birthInfo;
 		const d = p.deathInfo;
 		if (!b?.year) {
-			issues.push({ kind: "missing-birth", person: p.id, message: b ? `birth date "${b.text}" has no year` : "no birth date" });
+			issues.push({ kind: "missing-birth", person: p.id, message: b ? m.birthNoYear(b.text) : m.noBirth });
 		}
 		if (b?.year && d?.year && d.year < b.year) {
-			issues.push({ kind: "dates", person: p.id, message: `died (${d.year}) before being born (${b.year})` });
+			issues.push({ kind: "dates", person: p.id, message: m.diedBeforeBorn(d.year, b.year) });
 		}
 		if (b?.year && !d && thisYear - b.year > 105) {
-			issues.push({ kind: "dates", person: p.id, message: `born ${thisYear - b.year} years ago but no death date` });
+			issues.push({ kind: "dates", person: p.id, message: m.noDeathDate(thisYear - b.year) });
 		}
 		for (const c of g.get(g.children, p.id)) {
 			const cp = g.persons.get(c)!;
@@ -75,13 +69,13 @@ export function findIssues(g: FamilyGraph, fields: FieldNames, thisYear = new Da
 			const approx = cb.approx || !!b?.approx;
 			if (b?.year) {
 				const age = cb.year - b.year;
-				if (age < 0 && (!approx || age < -5)) issues.push({ kind: "dates", person: p.id, message: `child ${name(c)} (${cb.year}) born before the parent (${b.year})` });
-				else if (age >= 0 && age < 13 && !approx) issues.push({ kind: "dates", person: p.id, message: `was ${age} when ${name(c)} was born` });
-				else if (!approx && ((p.gender === "f" && age > 55) || age > 80)) issues.push({ kind: "dates", person: p.id, message: `was ${age} when ${name(c)} was born` });
+				if (age < 0 && (!approx || age < -5)) issues.push({ kind: "dates", person: p.id, message: m.childBeforeParent(name(c), cb.year, b.year) });
+				else if (age >= 0 && age < 13 && !approx) issues.push({ kind: "dates", person: p.id, message: m.parentAge(age, name(c)) });
+				else if (!approx && ((p.gender === "f" && age > 55) || age > 80)) issues.push({ kind: "dates", person: p.id, message: m.parentAge(age, name(c)) });
 			}
 			// A father may die before the child is born, so allow a year
 			if (d?.year && !d.approx && !cb.approx && cb.year > d.year + (p.gender === "f" ? 0 : 1)) {
-				issues.push({ kind: "dates", person: p.id, message: `${name(c)} born ${cb.year}, after ${name(p.id)} died (${d.year})` });
+				issues.push({ kind: "dates", person: p.id, message: m.bornAfterDeath(name(c), cb.year, name(p.id), d.year) });
 			}
 		}
 	}
@@ -90,16 +84,16 @@ export function findIssues(g: FamilyGraph, fields: FieldNames, thisYear = new Da
 	for (const p of g.persons.values()) {
 		const certainParents = [...g.get(g.parents, p.id)].filter((x) => !g.isUncertain("parent", x, p.id));
 		if (certainParents.length > 2) {
-			issues.push({ kind: "structure", person: p.id, message: `has ${certainParents.length} parents: ${certainParents.map(name).join(", ")}` });
+			issues.push({ kind: "structure", person: p.id, message: m.tooManyParents(certainParents.length, certainParents.map(name).join(", ")) });
 		}
 		for (const s of g.get(g.spouses, p.id)) {
 			if (p.id < s && (g.get(g.parents, p.id).has(s) || g.get(g.children, p.id).has(s))) {
-				issues.push({ kind: "structure", person: p.id, message: `${name(s)} is listed as both spouse and parent/child` });
+				issues.push({ kind: "structure", person: p.id, message: m.spouseAndParent(name(s)) });
 			}
 		}
 	}
 	for (const id of ancestorCycles(g)) {
-		issues.push({ kind: "structure", person: id, message: "is listed as their own ancestor (parent/child links form a loop)" });
+		issues.push({ kind: "structure", person: id, message: m.ownAncestor });
 	}
 	return issues;
 }

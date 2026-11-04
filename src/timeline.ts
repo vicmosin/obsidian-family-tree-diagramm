@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { computeLayout, DEFAULT_LAYOUT } from "./layout";
 import { FamilyGraph, Person } from "./model";
 import { RenderExtras, RendererCallbacks } from "./render";
@@ -324,7 +325,7 @@ export class TimelineRenderer {
 
 		this.undatedEl.empty();
 		if (undated.length) {
-			this.undatedEl.appendText("No dates yet: ");
+			this.undatedEl.appendText(t().timeline.noDates);
 			undated.forEach((p, i) => {
 				const a = this.undatedEl.createEl("a", { cls: "ft-tl-undated-name", text: p.name });
 				a.onclick = () => (p.ghost ? this.cb.onCreate(p) : this.cb.onOpen(p, false));
@@ -332,7 +333,7 @@ export class TimelineRenderer {
 			});
 		}
 		if (!rows.length) {
-			svg.appendChild(text("Add birth_date or death_date to person notes to see them here", { x: SIDE, y: this.top + 20, class: "ft-tl-empty" }));
+			svg.appendChild(text(t().timeline.empty, { x: SIDE, y: this.top + 20, class: "ft-tl-empty" }));
 		}
 	}
 

@@ -33,6 +33,8 @@ test("guessGender uses property then patronymic", () => {
 	assert.equal(guessGender(undefined, "Lucy"), undefined);
 	assert.equal(guessGender("f", "Lucy"), "f");
 	assert.equal(guessGender("ж", "Lucy"), "f");
+	assert.equal(guessGender("w", "Lucy"), "f");
+	assert.equal(guessGender("männlich", "Lucy"), "m");
 });
 
 test("buildGraph links both directions and creates ghosts", () => {

@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import L from "leaflet";
 import { feature } from "topojson-client";
 import type { FeatureCollection } from "geojson";
@@ -92,7 +93,7 @@ export class MapRenderer {
 		}
 
 		if (navigator.onLine) this.addTiles();
-		else this.setStatus("Offline — built-in map");
+		else this.setStatus(t().map.offline);
 		window.addEventListener("online", this.onOnline);
 
 		this.resizeObserver = new ResizeObserver(() => this.map.invalidateSize());
@@ -104,7 +105,7 @@ export class MapRenderer {
 		this.setupSlider();
 		this.draw();
 		const missing = [...data.places.values()].filter((p) => !p.coords).length;
-		this.locateEl.textContent = `📍 ${missing} place${missing === 1 ? "" : "s"} without coordinates — find…`;
+		this.locateEl.textContent = t().map.missing(missing);
 		this.locateEl.toggleAttribute("hidden", missing === 0 || !this.hooks.onLocate);
 		if (!keepView) window.requestAnimationFrame(() => (data.highlight && this.hasStops(data.highlight) ? this.centerOn(data.highlight) : this.fit()));
 	}
@@ -155,7 +156,7 @@ export class MapRenderer {
 			this.setStatus("");
 		});
 		this.tiles.on("tileerror", () => {
-			if (!this.tilesLoaded) this.setStatus("Offline — built-in map");
+			if (!this.tilesLoaded) this.setStatus(t().map.offline);
 		});
 		this.tiles.addTo(this.map);
 		this.setStatus("");
@@ -184,7 +185,7 @@ export class MapRenderer {
 	}
 
 	private updateSliderLabel() {
-		this.sliderLabel.textContent = this.yearTo ? `up to ${this.yearTo}` : "all years";
+		this.sliderLabel.textContent = this.yearTo ? t().map.upTo(this.yearTo) : t().map.allYears;
 	}
 
 	private shown(e: PlaceEvent) {
@@ -256,7 +257,7 @@ export class MapRenderer {
 			li.createSpan({
 				cls: "ft-map-role",
 				text: ROLE_ICON[e.role],
-				attr: { title: e.role === "birth" ? "Born" : e.role === "death" ? "Died" : "Lived" },
+				attr: { title: e.role === "birth" ? t().map.born : e.role === "death" ? t().map.died : t().map.lived },
 			});
 			li.createSpan({ cls: "ft-map-year", text: e.year ? (e.to && e.to !== e.year ? `${e.year}–${e.to}` : String(e.year)) : "" });
 			const a = li.createEl("a", { text: p.name + (e.uncertain ? " ?" : "") });

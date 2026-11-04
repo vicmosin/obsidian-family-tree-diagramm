@@ -129,3 +129,11 @@ export function mockApp(defaultFolder: string) {
 	};
 	return app;
 }
+
+export let language = "en";
+export function setObsidianLanguage(code: string) {
+	language = code;
+}
+export function getLanguage(): string {
+	return language;
+}

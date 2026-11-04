@@ -4,7 +4,10 @@ import type { SettingDefinition, SettingDefinitionGroup } from "obsidian";
 import { rendered, setApiVersionOk } from "./obsidian-mock";
 import { DEFAULT_SETTINGS, FamilyTreeSettings, FamilyTreeSettingTab } from "../src/settings";
 import { DEFAULT_FIELDS, FamilyGraph } from "../src/model";
-import { DEFAULT_EVENTS_RU } from "../src/timeline";
+import { isDefaultEvents, setLanguage, t } from "../src/i18n";
+import en from "../src/i18n/en";
+import de from "../src/i18n/de";
+import { setObsidianLanguage } from "./obsidian-mock";
 
 function setup() {
 	const graph = new FamilyGraph();
@@ -12,11 +15,17 @@ function setup() {
 	let saves = 0;
 	let geocodes = 0;
 	let migrations = 0;
+	let languageApplied = 0;
 	const plugin = {
 		settings: { ...DEFAULT_SETTINGS, fields: { ...DEFAULT_FIELDS }, placeCache: { "name:leeds": [53.8, -1.55] } } as FamilyTreeSettings,
 		graph: () => graph,
 		saveSettings: async () => void saves++,
 		openGeocode: () => void geocodes++,
+		events: () => (isDefaultEvents(plugin.settings.events) ? t().defaultEvents : plugin.settings.events),
+		applyLanguage: () => {
+			languageApplied++;
+			setLanguage(plugin.settings.language);
+		},
 		migratePlaceCache: async () => {
 			migrations++;
 			plugin.settings.placeCache = {};
@@ -24,7 +33,7 @@ function setup() {
 	};
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const tab = new FamilyTreeSettingTab({} as any, plugin as any);
-	return { tab, plugin, saves: () => saves, geocodes: () => geocodes, migrations: () => migrations };
+	return { tab, plugin, saves: () => saves, geocodes: () => geocodes, migrations: () => migrations, languageApplied: () => languageApplied };
 }
 
 const groups = (tab: FamilyTreeSettingTab) => tab.getSettingDefinitions() as SettingDefinitionGroup[];
@@ -34,10 +43,10 @@ test("definitions: every control key reads a real setting", () => {
 	const { tab } = setup();
 	assert.deepEqual(
 		groups(tab).map((g) => g.heading),
-		["Relationship labels", "Timeline", "Map", "Which notes are people", "Property names", "Diagram"]
+		["Language", "Relationship labels", "Timeline", "Map", "Which notes are people", "Property names", "Diagram"]
 	);
 	const keys = items(tab).flatMap((d) => ("control" in d && d.control ? [d.control.key] : []));
-	assert.equal(keys.length, 21, "the 20 controls of 1.0.x plus the place notes folder");
+	assert.equal(keys.length, 22, "the 20 controls of 1.0.x, the place notes folder and the interface language");
 	for (const k of keys) assert.notEqual(tab.getControlValue(k), undefined, k);
 	assert.equal(tab.getControlValue("fields.parentOf"), "parent_of");
 	const me = items(tab).find((d) => d.name === "Me")!;
@@ -90,8 +99,8 @@ test("Obsidian < 1.13: display() draws the same settings with the classic API", 
 	plugin.settings.events = "custom";
 	row("Restore default events").onClick!();
 	await new Promise((r) => setTimeout(r, 0));
-	assert.equal(plugin.settings.events, DEFAULT_EVENTS_RU);
-	assert.equal(rendered.find((r) => r.name === "Historical events")!.value, DEFAULT_EVENTS_RU);
+	assert.equal(plugin.settings.events, en.defaultEvents);
+	assert.equal(rendered.find((r) => r.name === "Historical events")!.value, en.defaultEvents);
 
 	// The migration row only shows while there is something to move
 	rendered.find((r) => r.name === "Move remembered coordinates into notes")!.onClick!();
@@ -110,7 +119,7 @@ test("Obsidian 1.13+: actions refresh through update()", async () => {
 	plugin.settings.events = "custom";
 	restore.action({} as HTMLElement, 0);
 	await new Promise((r) => setTimeout(r, 0));
-	assert.equal(plugin.settings.events, DEFAULT_EVENTS_RU);
+	assert.equal(plugin.settings.events, en.defaultEvents);
 	assert.equal(updates, 1);
 	const move = items(tab).find((d) => d.name === "Move remembered coordinates into notes")!;
 	const visible = () => typeof move.visible === "function" && move.visible();
@@ -118,4 +127,32 @@ test("Obsidian 1.13+: actions refresh through update()", async () => {
 	plugin.settings.placeCache = {};
 	assert.equal(visible(), false, "hidden once everything is moved");
 	setApiVersionOk(false);
+});
+
+test("interface language: automatic follows Obsidian, a choice overrides it, everything switches", async () => {
+	setApiVersionOk(false);
+	setObsidianLanguage("de");
+	const { tab, plugin, languageApplied } = setup();
+	setLanguage(plugin.settings.language);
+	tab.display();
+	assert.ok(rendered.some((r) => r.heading && r.name === "Sprache"), "German headings with Obsidian in German");
+	assert.equal(rendered.find((r) => r.name === "Historische Ereignisse")!.value, de.defaultEvents, "built-in events follow the language");
+	assert.deepEqual(
+		rendered.filter((r) => r.kind === "button").map((r) => r.buttonText),
+		["Wiederherstellen", "Suchen", "Übertragen"]
+	);
+
+	await tab.setControlValue("language", "ru");
+	assert.equal(plugin.settings.language, "ru");
+	assert.equal(languageApplied(), 1);
+	assert.ok(rendered.some((r) => r.heading && r.name === "Язык"), "redrawn in Russian");
+
+	// A customised list isn't replaced by translations
+	plugin.settings.events = "1900 Custom";
+	assert.equal(tab.getControlValue("events"), "1900 Custom");
+
+	await tab.setControlValue("language", "bogus");
+	assert.equal(plugin.settings.language, "auto");
+	setObsidianLanguage("en");
+	setLanguage("auto");
 });
