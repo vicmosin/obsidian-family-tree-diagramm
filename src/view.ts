@@ -1,4 +1,5 @@
 import { ItemView, MarkdownRenderChild, setIcon, TFile, WorkspaceLeaf } from "obsidian";
+import { keepTouchesInside } from "./touch";
 import type FamilyTreePlugin from "./main";
 import { computeLayout } from "./layout";
 import { FamilyGraph, focusSet } from "./model";
@@ -156,6 +157,7 @@ export class FamilyTreeView extends ItemView {
 		button(bar, "maximize", "Fit to screen", () => this.renderer?.fit());
 
 		this.canvas = root.createDiv("ft-canvas");
+		keepTouchesInside(this, this.canvas);
 		this.mountRenderer();
 
 		this.registerEvent(
@@ -285,6 +287,7 @@ export class FamilyTreeBlock extends MarkdownRenderChild {
 		});
 		const display: Display = opts.view ?? this.defaultDisplay;
 		const canvas = wrap.createDiv("ft-canvas");
+		keepTouchesInside(this, canvas);
 		const renderer = (this.renderer = createRenderer(this.plugin, display, canvas, undefined, true));
 
 		const draw = (keepView: boolean) => {
