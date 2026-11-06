@@ -1,4 +1,4 @@
-import { ItemView, MarkdownRenderChild, setIcon, TFile, WorkspaceLeaf } from "obsidian";
+import { ItemView, MarkdownRenderChild, setIcon, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { keepTouchesInside } from "./touch";
 import { t } from "./i18n";
 import type FamilyTreePlugin from "./main";
@@ -13,6 +13,8 @@ export const VIEW_TYPE = "family-tree-view";
 type Mode = "all" | "focus";
 export type Display = "tree" | "timeline" | "map";
 type AnyRenderer = TreeRenderer | TimelineRenderer | MapRenderer;
+
+const isDisplay = (v: unknown): v is Display => v === "tree" || v === "timeline" || v === "map";
 
 const DISPLAYS: { id: Display; icon: string }[] = [
 	{ id: "tree", icon: "network" },
@@ -89,6 +91,17 @@ export class FamilyTreeView extends ItemView {
 		return "network";
 	}
 
+	/** The display is part of the view state, so it survives restarts and the tab title follows it */
+	getState(): Record<string, unknown> {
+		return { ...super.getState(), display: this.display };
+	}
+
+	async setState(state: unknown, result: ViewStateResult): Promise<void> {
+		const display = (state as { display?: unknown } | null)?.display;
+		if (isDisplay(display)) this.showDisplay(display);
+		await super.setState(state, result);
+	}
+
 	async onOpen() {
 		this.contentEl.addClass("ft-view");
 		this.buildUi();
@@ -114,7 +127,8 @@ export class FamilyTreeView extends ItemView {
 		this.root = this.activePersonId();
 		this.updateModeButton();
 		// Layout needs the container size
-		window.requestAnimationFrame(() => this.refresh(false));
+		const frame = window.requestAnimationFrame(() => this.refresh(false));
+		this.register(() => window.cancelAnimationFrame(frame));
 	}
 
 	/** Redraws toolbar and diagram, e.g. after the interface language changed */
@@ -122,6 +136,12 @@ export class FamilyTreeView extends ItemView {
 		this.buildUi();
 		this.updateModeButton();
 		this.refresh(true);
+		this.updateHeader();
+	}
+
+	/** Re-applies the view state, which makes Obsidian redraw the tab title */
+	private updateHeader() {
+		void this.leaf.setViewState({ ...this.leaf.getViewState(), state: this.getState() });
 	}
 
 	private buildUi() {
@@ -134,7 +154,7 @@ export class FamilyTreeView extends ItemView {
 
 		const bar = root.createDiv("ft-toolbar");
 		const seg = bar.createDiv("ft-segmented");
-		for (const d of DISPLAYS) this.displayBtns.set(d.id, button(seg, d.icon, tr.display[d.id], () => this.setDisplay(d.id)));
+		for (const d of DISPLAYS) this.displayBtns.set(d.id, button(seg, d.icon, tr.display[d.id], () => void this.setDisplay(d.id)));
 		this.orderEl = bar.createEl("select", { cls: "dropdown", attr: { "aria-label": tr.order } });
 		this.orderEl.createEl("option", { text: tr.byFamily, value: "family" });
 		this.orderEl.createEl("option", { text: tr.byBirth, value: "birth" });
@@ -201,11 +221,20 @@ export class FamilyTreeView extends ItemView {
 
 	async onClose() {
 		this.renderer?.destroy();
+		this.renderer = undefined;
 	}
 
-	setDisplay(display: Display) {
+	/** Switches tree/timeline/map through the view state, so the tab title changes with it */
+	async setDisplay(display: Display): Promise<void> {
+		if (display === this.display && this.renderer) return;
+		await this.leaf.setViewState({ ...this.leaf.getViewState(), state: { ...this.getState(), display } });
+	}
+
+	private showDisplay(display: Display) {
 		if (display === this.display && this.renderer) return;
 		this.display = display;
+		// Before onOpen the toolbar does not exist yet; buildUi mounts the right renderer
+		if (!this.canvas) return;
 		this.mountRenderer();
 		this.refresh(false);
 	}
@@ -293,15 +322,21 @@ export class FamilyTreeBlock extends MarkdownRenderChild {
 		const opts = parseBlock(this.source);
 		const wrap = this.containerEl.createDiv("ft-embed");
 		wrap.style.height = `${opts.height}px`;
-		const bar = wrap.createDiv("ft-embed-bar");
-		button(bar, "zoom-in", t().view.zoomIn, () => this.renderer?.zoomBy(1.25));
-		button(bar, "zoom-out", t().view.zoomOut, () => this.renderer?.zoomBy(0.8));
-		button(bar, "maximize", t().view.fit, () => this.renderer?.fit());
-		button(bar, "external-link", t().view.openInView, () => {
-			const id = this.resolveRoot(opts.root);
-			void this.plugin.activateView(id, display);
-		});
 		const display: Display = opts.view ?? this.defaultDisplay;
+		const bar = wrap.createDiv("ft-embed-bar");
+		const buildBar = () => {
+			const tr = t().view;
+			bar.empty();
+			button(bar, "zoom-in", tr.zoomIn, () => this.renderer?.zoomBy(1.25));
+			button(bar, "zoom-out", tr.zoomOut, () => this.renderer?.zoomBy(0.8));
+			button(bar, "maximize", tr.fit, () => this.renderer?.fit());
+			button(bar, "external-link", tr.openInView, () => {
+				const id = this.resolveRoot(opts.root);
+				void this.plugin.activateView(id, display);
+			});
+		};
+		buildBar();
+		this.register(this.plugin.onLanguageChange(buildBar));
 		const canvas = wrap.createDiv("ft-canvas");
 		keepTouchesInside(this, canvas);
 		const renderer = (this.renderer = createRenderer(this.plugin, display, canvas, undefined, true));
@@ -314,7 +349,9 @@ export class FamilyTreeBlock extends MarkdownRenderChild {
 			const extras = showLabels ? this.plugin.labelExtras(this.plugin.meId(), visible) : {};
 			feedRenderer(this.plugin, renderer, { visible, extras, highlight: root, order: opts.order ?? "family" }, keepView);
 		};
-		window.requestAnimationFrame(() => draw(false));
+		// Layout needs the container size. A block re-rendered before the next frame is already unloaded
+		const frame = window.requestAnimationFrame(() => draw(false));
+		this.register(() => window.cancelAnimationFrame(frame));
 		this.register(this.plugin.onGraphChange(() => draw(true)));
 	}
 

@@ -77,3 +77,16 @@ test("place notes are found by name or alias, in any folder", () => {
 	assert.equal(places.get("Anywhere/Deep/York.md")!.events.length, 1);
 	assert.deepEqual(places.get("Geo/Leeds.md")!.coords, [53.8, -1.55], "unresolved link falls back to the index");
 });
+
+test("a place remembers every name it is mentioned by, and old coordinates under any of them", () => {
+	const n = (basename: string, fm: Record<string, unknown>): RawNote => ({ id: basename, basename, frontmatter: fm });
+	const notes = [n("George", { birth_place: "Königsberg" }), n("Helen", { birth_place: "[[Kaliningrad]]" })];
+	const g = buildGraph(notes, (l) => notes.find((x) => x.basename === l) ?? null);
+	const note = { path: "Geo/Kaliningrad.md", name: "Kaliningrad", aliases: ["Königsberg"] };
+	const places = collectPlaces(g, new Set(["Helen", "George"]), (l) => (l === "Kaliningrad" ? note : null), new PlaceIndex([note]), {
+		"name:königsberg": [54.71, 20.51],
+	});
+	const place = places.get(note.path)!;
+	assert.deepEqual([...place.mentions].sort(), ["Kaliningrad", "Königsberg"]);
+	assert.deepEqual(place.coords, [54.71, 20.51]);
+});

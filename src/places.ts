@@ -83,6 +83,8 @@ export interface Place {
 	/** Place note, if the place is a link to an existing note */
 	notePath?: string;
 	coords?: Coords;
+	/** Every name person notes use for this place (link targets, aliases, plain text) */
+	mentions: string[];
 	events: PlaceEvent[];
 }
 
@@ -94,6 +96,13 @@ export interface PlaceNote {
 	/** Other names from the `aliases` property, e.g. a city's former name */
 	aliases: string[];
 	coords?: Coords;
+}
+
+/** Whether a note's properties make it a place note: `type: place`, or coordinates */
+export function isPlaceFrontmatter(fm: Record<string, unknown> | undefined): boolean {
+	if (!fm) return false;
+	const types: unknown[] = Array.isArray(fm.type) ? fm.type : [fm.type];
+	return types.includes("place") || fm.location != null || fm.coordinates != null || fm.geo != null;
 }
 
 /** Finds place notes by file name or alias, case-insensitively, wherever they are in the vault */
@@ -153,10 +162,11 @@ export function collectPlaces(
 				const key = note?.path ?? placeKey(m.name);
 				let place = places.get(key);
 				if (!place) {
-					const coords = note?.coords ?? legacyCache[placeKey(m.name)];
-					place = { key, name: note?.name ?? m.name, notePath: note?.path, coords, events: [] };
+					place = { key, name: note?.name ?? m.name, notePath: note?.path, coords: note?.coords, mentions: [], events: [] };
 					places.set(key, place);
 				}
+				if (!place.mentions.includes(m.name)) place.mentions.push(m.name);
+				place.coords ??= legacyCache[placeKey(m.name)];
 				place.events.push({ person: id, role, year: eventYear(p, role, m), to: role === "lived" ? m.to : undefined, uncertain: m.uncertain });
 			}
 		}

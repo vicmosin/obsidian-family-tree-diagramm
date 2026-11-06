@@ -1,11 +1,12 @@
-import { debounce, getAllTags, Menu, normalizePath, Notice, parseFrontMatterAliases, Plugin, TFile } from "obsidian";
+import { CachedMetadata, debounce, getAllTags, Menu, normalizePath, Notice, parseFrontMatterAliases, Plugin, TFile } from "obsidian";
 import { DEFAULT_LAYOUT, LayoutOptions } from "./layout";
 import { ReverseFix } from "./check";
 import { CheckModal } from "./checkModal";
 import { Kinship } from "./kinship";
-import { isDefaultEvents, resolveLang, setLanguage, t } from "./i18n";
+import { isDefaultEvents, lang, setLanguage, t } from "./i18n";
 import { GeocodeModal } from "./geocodeModal";
-import { collectPlaces, Coords, parseLocation, Place, PlaceIndex, PlaceNote } from "./places";
+import { collectPlaces, Coords, isPlaceFrontmatter, parseLocation, Place, PlaceIndex, PlaceNote } from "./places";
+import { noteName, referencedNames } from "./watch";
 import { migratePlaceCache, newNoteFolder, savePlaceCoords } from "./placeNotes";
 import { buildGraph, extractLinks, FamilyGraph, Person, RawNote, RELATION_FIELDS } from "./model";
 import { RenderExtras, RendererCallbacks } from "./render";
@@ -17,7 +18,10 @@ const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "a
 export default class FamilyTreePlugin extends Plugin {
 	settings!: FamilyTreeSettings;
 	private cached?: FamilyGraph;
+	private cachedPlaces?: { index: PlaceIndex; paths: Set<string> };
+	private cachedNames?: Set<string>;
 	private listeners = new Set<() => void>();
+	private languageListeners = new Set<() => void>();
 
 	async onload() {
 		await this.loadSettings();
@@ -85,8 +89,17 @@ export default class FamilyTreePlugin extends Plugin {
 		this.addSettingTab(new FamilyTreeSettingTab(this.app, this));
 
 		const invalidate = debounce(() => this.invalidate(), 400, true);
-		this.registerEvent(this.app.metadataCache.on("changed", invalidate));
-		this.registerEvent(this.app.metadataCache.on("resolved", invalidate));
+		this.registerEvent(
+			this.app.metadataCache.on("changed", (file, _data, cache) => {
+				if (this.affectsTree(file, cache)) invalidate();
+			})
+		);
+		// "resolved" fires after every edit; only the first one (the vault finished indexing) matters
+		const resolved = this.app.metadataCache.on("resolved", () => {
+			this.app.metadataCache.offref(resolved);
+			invalidate();
+		});
+		this.registerEvent(resolved);
 		this.registerEvent(this.app.vault.on("rename", invalidate));
 		this.registerEvent(this.app.vault.on("delete", invalidate));
 	}
@@ -118,14 +131,30 @@ export default class FamilyTreePlugin extends Plugin {
 
 	/** Notes with `type: place` or with coordinates, in any folder */
 	private placeIndex(): PlaceIndex {
+		return this.placeNotes().index;
+	}
+
+	private placeNotes(): { index: PlaceIndex; paths: Set<string> } {
+		if (this.cachedPlaces) return this.cachedPlaces;
 		const notes: PlaceNote[] = [];
 		for (const file of this.app.vault.getMarkdownFiles()) {
-			const fm: Record<string, unknown> | undefined = this.app.metadataCache.getFileCache(file)?.frontmatter;
-			if (!fm) continue;
-			const types = Array.isArray(fm.type) ? fm.type : [fm.type];
-			if (types.includes("place") || fm.location != null || fm.coordinates != null || fm.geo != null) notes.push(this.placeNote(file));
+			if (isPlaceFrontmatter(this.app.metadataCache.getFileCache(file)?.frontmatter)) notes.push(this.placeNote(file));
 		}
-		return new PlaceIndex(notes);
+		this.cachedPlaces = { index: new PlaceIndex(notes), paths: new Set(notes.map((n) => n.path)) };
+		return this.cachedPlaces;
+	}
+
+	/** Whether an edited note can change the tree: a person, a place, or a note someone links to */
+	private affectsTree(file: TFile, cache: CachedMetadata): boolean {
+		const g = this.cached;
+		// Nothing read yet: whoever reads next sees the change anyway
+		if (!g && !this.cachedPlaces) return false;
+		if (g?.persons.has(file.path) || this.isPersonNote(cache)) return true;
+		if (this.cachedPlaces?.paths.has(file.path) || isPlaceFrontmatter(cache.frontmatter)) return true;
+		if (!g) return false;
+		this.cachedNames ??= referencedNames(g);
+		const names = [file.basename, ...(parseFrontMatterAliases(cache.frontmatter ?? null) ?? [])];
+		return names.some((n) => this.cachedNames!.has(noteName(n)));
 	}
 
 	/** Saves coordinates in the place's note, creating the note if needed */
@@ -175,6 +204,7 @@ export default class FamilyTreePlugin extends Plugin {
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
 			if (leaf.view instanceof FamilyTreeView) leaf.view.rebuild();
 		}
+		this.languageListeners.forEach((fn) => fn());
 		this.listeners.forEach((fn) => fn());
 		new Notice(t().notices.languageChanged);
 	}
@@ -190,8 +220,16 @@ export default class FamilyTreePlugin extends Plugin {
 		return () => this.listeners.delete(fn);
 	}
 
+	/** Called after the interface language changed; returns an unsubscribe function */
+	onLanguageChange(fn: () => void): () => void {
+		this.languageListeners.add(fn);
+		return () => this.languageListeners.delete(fn);
+	}
+
 	private invalidate() {
 		this.cached = undefined;
+		this.cachedPlaces = undefined;
+		this.cachedNames = undefined;
 		for (const view of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
 			if (view.view instanceof FamilyTreeView) view.view.refresh(true);
 		}
@@ -222,16 +260,7 @@ export default class FamilyTreePlugin extends Plugin {
 		const notes: RawNote[] = [];
 		for (const file of this.app.vault.getMarkdownFiles()) {
 			const cache = metadataCache.getFileCache(file);
-			if (!cache) continue;
-			const type: unknown = cache.frontmatter?.type;
-			const types = Array.isArray(type) ? type : [type];
-			const tags = (getAllTags(cache) ?? []).map((t) => t.replace(/^#/, "").toLowerCase());
-			const byType = !!s.typeValue && types.includes(s.typeValue);
-			// A tag alone also marks overview notes (e.g. an index called "Tree"), so require some person data too
-			const byTag = !!s.tag && tags.includes(s.tag.toLowerCase()) && this.hasPersonData(cache.frontmatter);
-			if (byType || byTag) {
-				notes.push(toRaw(file));
-			}
+			if (cache && this.isPersonNote(cache)) notes.push(toRaw(file));
 		}
 
 		const resolve = (link: string, from: string) => {
@@ -240,6 +269,17 @@ export default class FamilyTreePlugin extends Plugin {
 		};
 		this.cached = buildGraph(notes, resolve, s.fields);
 		return this.cached;
+	}
+
+	/** A note marked as a person by the `type` value or the tag from settings */
+	private isPersonNote(cache: CachedMetadata): boolean {
+		const s = this.settings;
+		const type: unknown = cache.frontmatter?.type;
+		const types: unknown[] = Array.isArray(type) ? type : [type];
+		if (s.typeValue && types.includes(s.typeValue)) return true;
+		// A tag alone also marks overview notes (e.g. an index called "Tree"), so require some person data too
+		const tags = (getAllTags(cache) ?? []).map((t) => t.replace(/^#/, "").toLowerCase());
+		return !!s.tag && tags.includes(s.tag.toLowerCase()) && this.hasPersonData(cache.frontmatter);
 	}
 
 	private hasPersonData(fm: Record<string, unknown> | undefined): boolean {
@@ -280,7 +320,7 @@ export default class FamilyTreePlugin extends Plugin {
 	/** Relationship badges for `visible` people, relative to `ref` */
 	labelExtras(ref: string | undefined, visible: Set<string>): RenderExtras {
 		if (!ref) return {};
-		const k = new Kinship(this.graph(), ref, resolveLang(this.settings.labelLanguage), this.settings.inferSpouseParent);
+		const k = new Kinship(this.graph(), ref, this.settings.labelLanguage === "auto" ? lang() : this.settings.labelLanguage, this.settings.inferSpouseParent);
 		const labels = new Map<string, string>();
 		for (const id of visible) {
 			const kin = k.get(id);
@@ -385,7 +425,7 @@ export default class FamilyTreePlugin extends Plugin {
 		}
 		await workspace.revealLeaf(leaf);
 		if (leaf.view instanceof FamilyTreeView) {
-			if (display) leaf.view.setDisplay(display);
+			if (display) await leaf.view.setDisplay(display);
 			if (focusId) leaf.view.focusOn(focusId);
 			else leaf.view.setMode("all");
 		}

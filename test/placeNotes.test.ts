@@ -5,11 +5,12 @@ import { mockApp, TFile, TFolder } from "./obsidian-mock";
 import { migratePlaceCache, savePlaceCoords } from "../src/placeNotes";
 import { Coords, Place } from "../src/places";
 
-const place = (name: string, notePath?: string, coords?: Coords): Place => ({
+const place = (name: string, notePath?: string, coords?: Coords, mentions = [name]): Place => ({
 	key: notePath ?? `name:${name.toLowerCase()}`,
 	name,
 	notePath,
 	coords,
+	mentions,
 	events: [],
 });
 const asApp = (a: ReturnType<typeof mockApp>) => a as unknown as App;
@@ -72,4 +73,24 @@ test("migration moves remembered coordinates into notes", async () => {
 	assert.deepEqual(own.frontmatter.location, [53.8, -1.55], "a note's own coordinates are kept");
 	assert.deepEqual(cache, { "name:nowhere": [1, 1] }, "unmentioned places stay in plugin data");
 	assert.equal(app.files.get("Inbox/Toronto.md"), undefined);
+});
+
+test("a path-style link gets its note at that path, so the link resolves to it", async () => {
+	const app = mockApp("Inbox");
+	await savePlaceCoords(asApp(app), place("Geo/Old Towns/Leeds"), [53.8, -1.55], "Places");
+	assert.ok(app.files.get("Geo/Old Towns/Leeds.md"));
+	assert.ok(app.files.get("Geo/Old Towns") instanceof TFolder);
+});
+
+test("migration finds coordinates remembered under an alias or another spelling", async () => {
+	const app = mockApp("Inbox");
+	const note = new TFile("Geo/Kaliningrad.md");
+	note.frontmatter = { type: "place", aliases: ["Königsberg"] };
+	app.files.set(note.path, note);
+	const cache: Record<string, Coords> = { "name:königsberg": [54.71, 20.51] };
+	// collectPlaces picked the cached coordinates up through the alias mention
+	const places = [place("Kaliningrad", note.path, cache["name:königsberg"], ["Königsberg"])];
+	assert.deepEqual(await migratePlaceCache(asApp(app), places, cache, ""), { moved: 1, left: 0 });
+	assert.deepEqual(note.frontmatter.location, [54.71, 20.51]);
+	assert.deepEqual(cache, {});
 });

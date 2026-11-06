@@ -124,6 +124,7 @@ const de: Strings = {
 	},
 	settings: {
 		auto: "Automatisch (Sprache von Obsidian)",
+		autoInterface: "Automatisch (Sprache der Oberfläche)",
 		languageHeading: "Sprache",
 		interfaceLanguage: "Sprache der Oberfläche",
 		interfaceLanguageDesc: "Sprache der Menüs, Einstellungen und Meldungen dieses Plugins.",
