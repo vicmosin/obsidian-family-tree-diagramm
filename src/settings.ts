@@ -86,7 +86,7 @@ export class FamilyTreeSettingTab extends PluginSettingTab {
 				heading: tr.languageHeading,
 				items: [
 					{ name: tr.interfaceLanguage, desc: tr.interfaceLanguageDesc, control: { type: "dropdown", key: "language", options: languages } },
-					{ name: tr.labelLanguage, control: { type: "dropdown", key: "labelLanguage", options: languages } },
+					{ name: tr.labelLanguage, control: { type: "dropdown", key: "labelLanguage", options: { ...languages, auto: tr.autoInterface } } },
 				],
 			},
 			{

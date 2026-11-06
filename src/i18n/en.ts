@@ -124,6 +124,7 @@ const en = {
 	},
 	settings: {
 		auto: "Automatic (Obsidian's language)",
+		autoInterface: "Automatic (interface language)",
 		languageHeading: "Language",
 		interfaceLanguage: "Interface language",
 		interfaceLanguageDesc: "Language of this plugin's menus, settings and messages.",

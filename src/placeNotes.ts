@@ -20,9 +20,7 @@ export async function savePlaceCoords(app: App, place: Place, coords: Coords, fo
 	let file = place.notePath ? app.vault.getFileByPath(place.notePath) : null;
 	let created = false;
 	if (!file) {
-		const name = place.name.replace(/[\\/:*?"<>|#^[\]]/g, "").trim() || "Place";
-		const folder = await newNoteFolder(app, folderSetting);
-		const path = normalizePath(folder ? `${folder}/${name}.md` : `${name}.md`);
+		const path = await newPlacePath(app, place.name, folderSetting);
 		file = app.vault.getFileByPath(path);
 		if (!file) {
 			file = await app.vault.create(path, "");
@@ -34,6 +32,23 @@ export async function savePlaceCoords(app: App, place: Place, coords: Coords, fo
 		fm.location = coords;
 	});
 	return created ? "created" : "updated";
+}
+
+const UNSAFE = /[\\:*?"<>|#^[\]]/g;
+
+/**
+ * Where a note for a place without one goes. A path-style link (`[[Geo/Leeds]]`) gets its note at that
+ * path, so the link resolves to it; a plain name goes to the place notes folder.
+ */
+async function newPlacePath(app: App, name: string, folderSetting: string): Promise<string> {
+	const parts = name.split("/").map((p) => p.replace(UNSAFE, "").trim()).filter(Boolean);
+	const base = parts.pop() || "Place";
+	let folder: string;
+	if (parts.length) {
+		folder = normalizePath(parts.join("/"));
+		if (!(app.vault.getAbstractFileByPath(folder) instanceof TFolder)) await app.vault.createFolder(folder);
+	} else folder = await newNoteFolder(app, folderSetting);
+	return normalizePath(folder ? `${folder}/${base}.md` : `${base}.md`);
 }
 
 /**
@@ -48,12 +63,14 @@ export async function migratePlaceCache(
 ): Promise<{ moved: number; left: number }> {
 	let moved = 0;
 	for (const place of places) {
-		const key = cache[place.key] ? place.key : placeKey(place.name);
-		const coords = cache[key];
-		if (!coords) continue;
-		// place.coords is the cache's own array when the place had nothing better
-		if (!place.coords || place.coords === coords) await savePlaceCoords(app, place, coords, folderSetting);
-		delete cache[key];
+		// Earlier versions keyed coordinates by note path or by the name written in the person note,
+		// which may be an alias or another spelling of the place
+		const keys = [...new Set([place.key, placeKey(place.name), ...place.mentions.map(placeKey)])].filter((k) => cache[k]);
+		if (!keys.length) continue;
+		// place.coords is one of the cache's own arrays when the place had nothing better
+		const fromCache = !place.coords || keys.some((k) => cache[k] === place.coords);
+		if (fromCache) await savePlaceCoords(app, place, place.coords ?? cache[keys[0]], folderSetting);
+		for (const k of keys) delete cache[k];
 		moved++;
 	}
 	return { moved, left: Object.keys(cache).length };

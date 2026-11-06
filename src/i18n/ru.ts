@@ -124,6 +124,7 @@ const ru: Strings = {
 	},
 	settings: {
 		auto: "Автоматически (язык Obsidian)",
+		autoInterface: "Автоматически (язык интерфейса)",
 		languageHeading: "Язык",
 		interfaceLanguage: "Язык интерфейса",
 		interfaceLanguageDesc: "Язык меню, настроек и сообщений этого плагина.",

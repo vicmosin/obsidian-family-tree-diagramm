@@ -91,13 +91,28 @@ export function buildRows(
 	else {
 		// Family order: same reading order as the tree (generation by generation, left to right),
 		// so couples and siblings stay together
-		const layout = computeLayout(g, visible, { ...DEFAULT_LAYOUT, inferSpouseParent });
-		const pos = (r: Row) => layout.nodes.get(r.person.id)!;
-		const out = [...rows].sort((a, b) => pos(a).y - pos(b).y || pos(a).x - pos(b).x);
-		rows.splice(0, rows.length, ...out);
+		const rank = familyOrder(g, visible, inferSpouseParent);
+		rows.sort((a, b) => rank.get(a.person.id)! - rank.get(b.person.id)!);
 	}
 	undated.sort((a, b) => a.fullName.localeCompare(b.fullName));
 	return { rows, undated };
+}
+
+/** Last family order per graph: toggling labels or highlighting someone must not rerun the layout */
+const familyOrders = new WeakMap<FamilyGraph, { key: string; rank: Map<string, number> }>();
+
+/** Reading order of the tree (top to bottom, left to right) as a rank per person */
+function familyOrder(g: FamilyGraph, visible: Set<string>, inferSpouseParent: boolean): Map<string, number> {
+	const key = `${inferSpouseParent}|${[...visible].sort().join("\n")}`;
+	const hit = familyOrders.get(g);
+	if (hit?.key === key) return hit.rank;
+	const layout = computeLayout(g, visible, { ...DEFAULT_LAYOUT, inferSpouseParent });
+	const ids = [...layout.nodes.keys()].filter((id) => visible.has(id));
+	const pos = (id: string) => layout.nodes.get(id)!;
+	ids.sort((a, b) => pos(a).y - pos(b).y || pos(a).x - pos(b).x);
+	const rank = new Map(ids.map((id, i) => [id, i]));
+	familyOrders.set(g, { key, rank });
+	return rank;
 }
 
 const ROW_H = 30;

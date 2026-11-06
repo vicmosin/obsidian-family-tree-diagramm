@@ -48,3 +48,11 @@ test("family order follows the tree: generations, couples together", () => {
 	assert.equal(Math.abs(idx("Father") - idx("Mother")), 1);
 	assert.equal(Math.abs(idx("Grandpa") - idx("Grandma")), 1);
 });
+
+test("family order is reused while the graph and the visible people stay the same", () => {
+	const first = buildRows(g, all, "family", 2026).rows.map((r) => r.person.id);
+	const again = buildRows(g, new Set(all), "family", 2026).rows.map((r) => r.person.id);
+	assert.deepEqual(again, first);
+	const fewer = new Set(["Father", "Me"]);
+	assert.deepEqual(buildRows(g, fewer, "family", 2026).rows.map((r) => r.person.id), ["Father", "Me"]);
+});
